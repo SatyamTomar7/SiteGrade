@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "install:browsers": "npx puppeteer browsers install chrome",
+    "postinstall": "npm run install:browsers",
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "worker": "node src/queues/analysisWorker.js"

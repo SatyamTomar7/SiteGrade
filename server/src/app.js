@@ -19,11 +19,14 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:5173',
- 'https://site-grade.vercel.app',
+  'https://site-grade.vercel.app',
+  'https://sitegrade.onrender.com',
+  'https://sitegrade-frontend.onrender.com',
   process.env.CLIENT_URL
 ].filter(Boolean);
 
 // Security middleware
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(cors({
   origin: (origin, callback) => {
