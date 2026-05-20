@@ -1,6 +1,7 @@
 import lighthouse from 'lighthouse';
 import * as chromeLauncher from 'chrome-launcher';
 import { logger } from '../config/logger.js';
+import { getChromeExecutablePath } from '../utils/browser.js';
 
 /**
  * Runs Lighthouse audit on a URL
@@ -9,6 +10,7 @@ import { logger } from '../config/logger.js';
  */
 export const analyzeWithLighthouse = async (url) => {
   const chrome = await chromeLauncher.launch({
+    chromePath: getChromeExecutablePath(),
     chromeFlags: [
       '--headless',
       '--disable-gpu',

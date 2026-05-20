@@ -2,6 +2,7 @@ import puppeteer from 'puppeteer';
 import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '../config/logger.js';
+import { getChromeExecutablePath } from '../utils/browser.js';
 
 const SCREENSHOTS_DIR = process.env.SCREENSHOTS_DIR || './screenshots';
 
@@ -264,6 +265,7 @@ export const analyzeWithPuppeteer = async (url, reportId) => {
 
   const browser = await puppeteer.launch({
     headless: 'new',
+    executablePath: getChromeExecutablePath(),
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
