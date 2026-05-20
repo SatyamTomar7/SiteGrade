@@ -55,6 +55,7 @@ app.get('/api/health', healthResponse);
 
 // API routes
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
 app.use('/api/analysis', analysisRoutes);
 
 // Global error handler
