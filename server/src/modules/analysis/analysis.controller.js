@@ -3,6 +3,7 @@ import { sendResponse } from '../../utils/apiResponse.js';
 import * as analysisService from './analysis.service.js';
 import { analysisQueue } from '../../queues/analysisQueue.js';
 import { logger } from '../../config/logger.js';
+import { assertSafeAnalysisUrl } from '../../utils/urlSafety.js';
 
 const normalizeUrl = (url) => {
   if (typeof url !== 'string' || !url.trim()) {
@@ -22,15 +23,7 @@ export const createAnalysis = asyncHandler(async (req, res) => {
   const { url } = req.body;
   const userId = req.user._id;
   
-  const normalizedUrl = normalizeUrl(url);
-  
-  // Validate URL format
-  try {
-    new URL(normalizedUrl);
-  } catch {
-    res.status(400);
-    throw new Error('Invalid URL format provided');
-  }
+  const normalizedUrl = await assertSafeAnalysisUrl(normalizeUrl(url));
   
   const report = await analysisService.createReport(userId, normalizedUrl);
   
