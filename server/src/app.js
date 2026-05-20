@@ -20,6 +20,8 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
   'http://localhost:5173',
   'https://site-grade-6lyx.vercel.app',
+  'https://sitegrade.onrender.com',
+  'https://sitegrade-frontend.onrender.com',
   process.env.CLIENT_URL
 ].filter(Boolean);
 
