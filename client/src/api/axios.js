@@ -2,7 +2,31 @@ import axios from 'axios';
 import { queryClient } from '../lib/queryClient';
 import { useAuthStore } from '../store/authStore';
 
-const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const normalizeApiUrl = (value) => value?.replace(/\/+$/, '');
+
+const resolveBaseUrl = () => {
+  const configuredUrl = normalizeApiUrl(import.meta.env.VITE_API_URL);
+
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  if (typeof window !== 'undefined') {
+    const { hostname, origin } = window.location;
+
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:5000/api';
+    }
+
+    // In production, prefer same-origin /api so the frontend can work
+    // behind a CDN rewrite/proxy without hardcoding a backend hostname.
+    return `${origin}/api`;
+  }
+
+  return 'http://localhost:5000/api';
+};
+
+const baseURL = resolveBaseUrl();
 
 const api = axios.create({
   baseURL,
