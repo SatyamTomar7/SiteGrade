@@ -45,10 +45,13 @@ app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Health check
-app.get('/health', (req, res) => {
+const healthResponse = (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
+};
+
+// Health checks
+app.get('/health', healthResponse);
+app.get('/api/health', healthResponse);
 
 // API routes
 app.use('/api/auth', authRoutes);
