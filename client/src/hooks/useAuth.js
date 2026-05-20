@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api/auth.api';
@@ -6,20 +7,37 @@ import { useAuthStore } from '../store/authStore';
 export const useAuth = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const { login, logout, setUser, setLoading, setError, clearError } = useAuthStore();
+  const {
+    user: storedUser,
+    isAuthenticated,
+    isLoading,
+    error,
+    login,
+    logout,
+    setUser,
+    setLoading,
+    setError,
+    clearError
+  } = useAuthStore();
 
-  const { data: userData } = useQuery({
+  const { data: userData, error: userError } = useQuery({
     queryKey: ['me'],
     queryFn: () => authApi.getMe(),
-    enabled: useAuthStore.getState().isAuthenticated,
+    enabled: isAuthenticated,
     retry: false,
-    onSuccess: (data) => {
-      setUser(data.data);
-    },
-    onError: () => {
+  });
+
+  useEffect(() => {
+    if (userData?.data) {
+      setUser(userData.data);
+    }
+  }, [setUser, userData]);
+
+  useEffect(() => {
+    if (userError) {
       logout();
     }
-  });
+  }, [logout, userError]);
 
   const registerMutation = useMutation({
     mutationFn: authApi.register,
@@ -31,7 +49,6 @@ export const useAuth = () => {
       const { user, accessToken } = data.data;
       login(user, accessToken);
       setLoading(false);
-      navigate('/dashboard');
     },
     onError: (error) => {
       setError(error.response?.data?.message || 'Registration failed');
@@ -49,7 +66,6 @@ export const useAuth = () => {
       const { user, accessToken } = data.data;
       login(user, accessToken);
       setLoading(false);
-      navigate('/dashboard');
     },
     onError: (error) => {
       setError(error.response?.data?.message || 'Login failed');
@@ -72,10 +88,10 @@ export const useAuth = () => {
   });
 
   return {
-    user: userData?.data || useAuthStore.getState().user,
-    isAuthenticated: useAuthStore.getState().isAuthenticated,
-    isLoading: useAuthStore.getState().isLoading,
-    error: useAuthStore.getState().error,
+    user: userData?.data || storedUser,
+    isAuthenticated,
+    isLoading,
+    error,
     register: registerMutation.mutate,
     login: loginMutation.mutate,
     logout: logoutMutation.mutate,

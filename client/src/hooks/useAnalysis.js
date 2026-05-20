@@ -41,6 +41,7 @@ export const useAnalysis = (initialJobId = null) => {
   const isComplete = statusData?.data?.state === 'completed';
   const isFailed = statusData?.data?.state === 'failed';
   const report = statusData?.data?.report;
+  const progress = Math.min(Math.max(Number(statusData?.data?.progress) || 0, 0), 100);
 
   return {
     createAnalysis: createMutation.mutate,
@@ -51,6 +52,7 @@ export const useAnalysis = (initialJobId = null) => {
     isPolling,
     isComplete,
     isFailed,
+    progress,
     report,
     currentJobId: activeJobId,
     currentReportId,

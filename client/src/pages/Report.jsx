@@ -7,7 +7,7 @@ import { AIAnalysisLoader } from '../components/loaders/AIAnalysisLoader';
 
 export const Report = () => {
   const { jobId } = useParams();
-  const { status, isPolling, isComplete, isFailed, report } = useAnalysis(jobId);
+  const { status, isPolling, isComplete, isFailed, progress, report } = useAnalysis(jobId);
   const targetUrl = report?.url || status?.report?.url || '';
 
   if (isFailed) {
@@ -26,7 +26,7 @@ export const Report = () => {
   }
 
   if ((isPolling && !report) || !isComplete || !report) {
-    return <AIAnalysisLoader targetUrl={targetUrl} />;
+    return <AIAnalysisLoader targetUrl={targetUrl} progress={progress} />;
   }
 
   const headerActions = (

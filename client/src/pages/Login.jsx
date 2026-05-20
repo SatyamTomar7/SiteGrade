@@ -87,7 +87,7 @@ export const Login = () => {
                   {...register('password')}
                   type="password"
                   className="input-field pl-11"
-                  placeholder="••••••••"
+                  placeholder="********"
                   disabled={isLoading}
                 />
               </div>
@@ -134,3 +134,4 @@ export const Login = () => {
     </div>
   );
 };
+

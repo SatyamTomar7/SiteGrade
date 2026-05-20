@@ -67,12 +67,17 @@ let refreshSubscribers = [];
 let hasForcedRedirect = false;
 
 const onRefreshed = (token) => {
-  refreshSubscribers.forEach((callback) => callback(token));
+  refreshSubscribers.forEach(({ resolve }) => resolve(token));
   refreshSubscribers = [];
 };
 
-const addRefreshSubscriber = (callback) => {
-  refreshSubscribers.push(callback);
+const onRefreshFailed = (error) => {
+  refreshSubscribers.forEach(({ reject }) => reject(error));
+  refreshSubscribers = [];
+};
+
+const addRefreshSubscriber = (resolve, reject) => {
+  refreshSubscribers.push({ resolve, reject });
 };
 
 const isTokenExpired = (token) => {
@@ -133,11 +138,14 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthRoute && !isPublicSharedRoute) {
       if (isRefreshing) {
-        return new Promise((resolve) => {
-          addRefreshSubscriber((token) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`;
-            resolve(api(originalRequest));
-          });
+        return new Promise((resolve, reject) => {
+          addRefreshSubscriber(
+            (token) => {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              resolve(api(originalRequest));
+            },
+            reject
+          );
         });
       }
 
@@ -162,6 +170,7 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         isRefreshing = false;
+        onRefreshFailed(refreshError);
         clearClientSession();
 
         const isAlreadyOnPublicShare = window.location.pathname.startsWith('/shared/');

@@ -109,7 +109,7 @@ export const Register = () => {
                   {...register('password')}
                   type="password"
                   className="input-field pl-11"
-                  placeholder="••••••••"
+                  placeholder="********"
                   disabled={isLoading}
                 />
               </div>
@@ -131,7 +131,7 @@ export const Register = () => {
                   {...register('confirmPassword')}
                   type="password"
                   className="input-field pl-11"
-                  placeholder="••••••••"
+                  placeholder="********"
                   disabled={isLoading}
                 />
               </div>
@@ -178,3 +178,4 @@ export const Register = () => {
     </div>
   );
 };
+
