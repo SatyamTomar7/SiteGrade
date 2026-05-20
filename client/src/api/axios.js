@@ -4,8 +4,26 @@ import { useAuthStore } from '../store/authStore';
 
 const normalizeApiUrl = (value) => value?.replace(/\/+$/, '');
 
+const ensureApiBasePath = (value) => {
+  if (!value || typeof window === 'undefined') {
+    return value;
+  }
+
+  try {
+    const url = new URL(value, window.location.origin);
+
+    if (!url.pathname || url.pathname === '/') {
+      url.pathname = '/api';
+    }
+
+    return normalizeApiUrl(url.toString());
+  } catch {
+    return normalizeApiUrl(value);
+  }
+};
+
 const resolveBaseUrl = () => {
-  const configuredUrl = normalizeApiUrl(import.meta.env.VITE_API_URL);
+  const configuredUrl = ensureApiBasePath(import.meta.env.VITE_API_URL);
 
   if (configuredUrl) {
     return configuredUrl;
