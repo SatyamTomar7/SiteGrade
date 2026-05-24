@@ -2,15 +2,24 @@ import jwt from 'jsonwebtoken';
 import { User } from '../../models/User.js';
 import { logger } from '../../config/logger.js';
 
-const generateTokens = (userId) => {
+const buildAuthPayload = (user) => ({
+  user: {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+    role: user.role
+  }
+});
+
+const generateTokens = (user) => {
   const accessToken = jwt.sign(
-    { id: userId },
+    { id: user._id },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_ACCESS_EXPIRATION || '15m' }
   );
   
   const refreshToken = jwt.sign(
-    { id: userId },
+    { id: user._id, version: user.refreshTokenVersion || 0 },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: process.env.JWT_REFRESH_EXPIRATION || '7d' }
   );
@@ -56,15 +65,10 @@ export const registerUser = async ({ name, email, password }) => {
     password
   });
   
-  const { accessToken, refreshToken } = generateTokens(user._id);
+  const { accessToken, refreshToken } = generateTokens(user);
   
   return {
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role
-    },
+    ...buildAuthPayload(user),
     accessToken,
     refreshToken
   };
@@ -90,17 +94,12 @@ export const loginUser = async ({ email, password }) => {
     throw error;
   }
   
-  const { accessToken, refreshToken } = generateTokens(user._id);
+  const { accessToken, refreshToken } = generateTokens(user);
   
   logger.info(`User logged in: ${user.email}`);
   
   return {
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role
-    },
+    ...buildAuthPayload(user),
     accessToken,
     refreshToken
   };
@@ -124,16 +123,35 @@ export const refreshAccessToken = async (refreshToken) => {
     error.statusCode = 401;
     throw error;
   }
+
+  if ((decoded.version ?? 0) !== (user.refreshTokenVersion || 0)) {
+    const error = new Error('Refresh token has been revoked');
+    error.statusCode = 401;
+    throw error;
+  }
   
-  const tokens = generateTokens(user._id);
+  const tokens = generateTokens(user);
   
   return {
     accessToken: tokens.accessToken,
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role
-    }
+    ...buildAuthPayload(user)
   };
+};
+
+export const revokeRefreshToken = async (refreshToken) => {
+  let decoded;
+
+  try {
+    decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+  } catch {
+    return;
+  }
+
+  const user = await User.findById(decoded.id);
+  if (!user) {
+    return;
+  }
+
+  user.refreshTokenVersion = (user.refreshTokenVersion || 0) + 1;
+  await user.save();
 };

@@ -2,83 +2,273 @@ import { Worker } from 'bullmq';
 import { closeRedis, connectRedis, isRedisConfigured, redisClient } from '../config/redis.js';
 import { logger } from '../config/logger.js';
 import * as analysisService from '../modules/analysis/analysis.service.js';
+import {
+  buildScoreBreakdown,
+  inferWebsiteType
+} from '../modules/analysis/analysis.helpers.js';
 import { analyzeWithPuppeteer } from '../services/puppeteer.service.js';
 import { analyzeWithLighthouse } from '../services/lighthouse.service.js';
+import { getCruxFieldData } from '../services/crux.service.js';
 import { generateAIReview } from '../services/aiReview.service.js';
+import { handleScheduledReportCompleted, handleScheduledReportFailed } from '../modules/schedules/schedules.service.js';
+import { closeSharedPuppeteerBrowser } from '../utils/browser.js';
 import { fileURLToPath } from 'url';
+
+const workerConcurrency = Math.max(Number(process.env.ANALYSIS_WORKER_CONCURRENCY) || 2, 1);
+const workerRateLimitMax = Math.max(Number(process.env.ANALYSIS_WORKER_RATE_LIMIT_MAX) || 5, 1);
+const workerRateLimitDurationMs = Math.max(Number(process.env.ANALYSIS_WORKER_RATE_LIMIT_DURATION_MS) || 60000, 1000);
+
+const averageScoreSet = (sets = []) => ({
+  performance: Math.round(sets.reduce((sum, item) => sum + (item.performance || 0), 0) / (sets.length || 1)),
+  seo: Math.round(sets.reduce((sum, item) => sum + (item.seo || 0), 0) / (sets.length || 1)),
+  accessibility: Math.round(sets.reduce((sum, item) => sum + (item.accessibility || 0), 0) / (sets.length || 1)),
+  bestPractices: Math.round(sets.reduce((sum, item) => sum + (item.bestPractices || 0), 0) / (sets.length || 1))
+});
+
+const buildCompetitorBenchmark = (targetReport, competitorReports = []) => {
+  const successfulCompetitors = competitorReports.filter((item) => item.status === 'completed');
+
+  if (!successfulCompetitors.length) {
+    return {
+      compared: 0,
+      targetRank: 1,
+      entries: [],
+      summary: 'No competitor benchmark was completed.'
+    };
+  }
+
+  const entries = [
+    { ...targetReport, label: 'Your site', isTarget: true },
+    ...successfulCompetitors.map((item) => ({ ...item, label: item.url, isTarget: false }))
+  ].sort((a, b) => b.overallScore - a.overallScore);
+
+  const targetRank = entries.findIndex((item) => item.isTarget) + 1;
+  return {
+    compared: successfulCompetitors.length,
+    targetRank,
+    entries,
+    summary: targetRank === 1
+      ? 'Your site currently leads this benchmark set.'
+      : `Your site ranks #${targetRank} out of ${entries.length} in this benchmark set.`
+  };
+};
 
 /**
  * Main analysis processor
  * Orchestrates Puppeteer scrape, Lighthouse audit, and AI review generation
  */
 const processAnalysis = async (job) => {
-  const { reportId, url } = job.data;
+  const { reportId, url, analysisConfig = {} } = job.data;
+  const auditProfiles = Array.isArray(analysisConfig.auditProfiles) && analysisConfig.auditProfiles.length
+    ? analysisConfig.auditProfiles
+    : ['mobile'];
   
   logger.info(`[Job ${job.id}] Starting analysis for ${url}`);
 
   try {
     await analysisService.markReportProcessing(reportId);
 
-    // Phase 1: Puppeteer Analysis (0-30%)
+    // Phase 1: Launch core audits concurrently (0-60%)
     await job.updateProgress(5);
-    logger.info(`[Job ${job.id}] Phase 1: Puppeteer analysis`);
-    
-    const puppeteerData = await analyzeWithPuppeteer(url, reportId);
-    await job.updateProgress(30);
-    logger.info(`[Job ${job.id}] Puppeteer complete - detected ${puppeteerData.techStack.length} technologies`);
+    logger.info(`[Job ${job.id}] Phase 1: Starting Puppeteer and Lighthouse audits in parallel`);
 
-    // Phase 2: Lighthouse Audit (30-60%)
-    await job.updateProgress(35);
-    logger.info(`[Job ${job.id}] Phase 2: Lighthouse audit`);
-    
-    const lighthouseData = await analyzeWithLighthouse(url);
+    const trackedPuppeteerPromise = analyzeWithPuppeteer(url, reportId, analysisConfig).then(async (result) => {
+      await job.updateProgress(30);
+      logger.info(`[Job ${job.id}] Puppeteer complete - detected ${result.techStack.length} technologies`);
+      return result;
+    });
+
+    const trackedLighthousePromise = Promise.all(
+      auditProfiles.map((profile) => analyzeWithLighthouse(url, { profile }))
+    );
+    const trackedFieldDataPromise = getCruxFieldData(url);
+    const [puppeteerData, lighthouseProfiles, fieldData] = await Promise.all([
+      trackedPuppeteerPromise,
+      trackedLighthousePromise,
+      trackedFieldDataPromise
+    ]);
+
     await job.updateProgress(60);
+    const lighthouseByProfile = Object.fromEntries(lighthouseProfiles.map((item) => [item.profile, item]));
+    const primaryLighthouseData = lighthouseByProfile.mobile || lighthouseProfiles[0];
+    const lighthouseData = {
+      ...primaryLighthouseData,
+      scores: averageScoreSet(lighthouseProfiles.map((item) => item.scores)),
+      profiles: lighthouseByProfile,
+      opportunityMap: lighthouseProfiles.flatMap((item) =>
+        item.opportunityMap.map((opportunity) => ({
+          ...opportunity,
+          profile: item.profile
+        }))
+      ),
+      accessibilityIssueDetails: lighthouseProfiles.flatMap((item) =>
+        item.accessibilityIssueDetails.map((issue) => ({
+          ...issue,
+          profile: item.profile
+        }))
+      )
+    };
     logger.info(`[Job ${job.id}] Lighthouse complete - Performance: ${lighthouseData.scores.performance}`);
 
-    // Phase 3: AI Review Generation (60-85%)
+    await job.updateProgress(72);
+    let benchmarkData = {
+      compared: 0,
+      targetRank: 1,
+      entries: [],
+      summary: 'No competitor benchmark was completed.'
+    };
+    if (analysisConfig.competitorUrls?.length) {
+      const competitorResults = await Promise.all(
+        analysisConfig.competitorUrls.map(async (competitorUrl) => {
+          try {
+            const [competitorPuppeteer, competitorLighthouse] = await Promise.all([
+              analyzeWithPuppeteer(competitorUrl, `${reportId}-benchmark`, { scanMode: 'single', crawlMaxPages: 1 }),
+              analyzeWithLighthouse(competitorUrl, { profile: auditProfiles[0] || 'mobile' })
+            ]);
+
+            return {
+              status: 'completed',
+              url: competitorUrl,
+              overallScore: Math.round((
+                competitorLighthouse.scores.performance +
+                competitorLighthouse.scores.seo +
+                competitorLighthouse.scores.accessibility +
+                competitorLighthouse.scores.bestPractices +
+                competitorPuppeteer.securityScore
+              ) / 5),
+              scores: {
+                ...competitorLighthouse.scores,
+                security: competitorPuppeteer.securityScore
+              },
+              pageType: competitorPuppeteer.pageType
+            };
+          } catch (error) {
+            return {
+              status: 'failed',
+              url: competitorUrl,
+              error: error.message
+            };
+          }
+        })
+      );
+
+      benchmarkData = buildCompetitorBenchmark({
+        url,
+        overallScore: Math.round((
+          lighthouseData.scores.performance +
+          lighthouseData.scores.seo +
+          lighthouseData.scores.accessibility +
+          lighthouseData.scores.bestPractices +
+          puppeteerData.securityScore
+        ) / 5),
+        scores: {
+          ...lighthouseData.scores,
+          security: puppeteerData.securityScore
+        },
+        pageType: puppeteerData.pageType
+      }, competitorResults);
+      benchmarkData.results = competitorResults;
+    }
+
+    // Phase 2: AI Review Generation (60-85%)
     await job.updateProgress(65);
-    logger.info(`[Job ${job.id}] Phase 3: AI review generation`);
+    logger.info(`[Job ${job.id}] Phase 2: AI review generation`);
     
-    const aiReviewData = await generateAIReview(lighthouseData, puppeteerData);
+    const aiReviewData = await generateAIReview(lighthouseData, {
+      ...puppeteerData,
+      benchmarkData,
+      fieldData,
+      analysisConfig
+    });
     await job.updateProgress(85);
     logger.info(`[Job ${job.id}] AI review complete - Grade: ${aiReviewData.overallGrade}`);
 
-    // Phase 4: Compile and save results (85-100%)
+    // Phase 3: Compile and save results (85-100%)
     await job.updateProgress(90);
-    logger.info(`[Job ${job.id}] Phase 4: Compiling final report`);
-
-    // Calculate security score from Puppeteer headers + Lighthouse best practices
-    const securityScore = Math.round(
-      (puppeteerData.securityScore + lighthouseData.scores.bestPractices) / 2
-    );
+    logger.info(`[Job ${job.id}] Phase 3: Compiling final report`);
 
     const finalScores = {
       performance: lighthouseData.scores.performance,
       seo: lighthouseData.scores.seo,
       accessibility: lighthouseData.scores.accessibility,
-      security: securityScore,
+      security: puppeteerData.securityScore,
       bestPractices: lighthouseData.scores.bestPractices
+    };
+    const detectedWebsiteType = inferWebsiteType({
+      requestedType: analysisConfig.websiteType,
+      pageType: puppeteerData.pageType,
+      crawlData: puppeteerData.crawlData,
+      techStack: puppeteerData.techStack,
+      title: puppeteerData.title,
+      url
+    });
+    const scoreBreakdown = buildScoreBreakdown(finalScores, {
+      websiteType: detectedWebsiteType,
+      crawlData: puppeteerData.crawlData
+    });
+    const siteProfile = {
+      requestedType: analysisConfig.websiteType || 'auto',
+      detectedType: detectedWebsiteType,
+      effectiveType: detectedWebsiteType,
+      scoringModel: {
+        weights: scoreBreakdown.weights,
+        weightedBaseScore: scoreBreakdown.weightedBaseScore,
+        crawlContribution: scoreBreakdown.crawlContribution
+      },
+      roleCoverage: scoreBreakdown.coverage
     };
 
     // Build comprehensive AI review text
-    const aiReviewText = buildAIReviewText(aiReviewData, lighthouseData, puppeteerData);
+    const aiReviewText = buildAIReviewText(
+      aiReviewData,
+      lighthouseData,
+      puppeteerData,
+      benchmarkData,
+      fieldData,
+      siteProfile
+    );
 
     const results = {
       scores: finalScores,
       aiReview: aiReviewText,
       lighthouseData: {
+        profileScores: Object.fromEntries(
+          Object.entries(lighthouseData.profiles || {}).map(([profile, data]) => [profile, data.scores])
+        ),
+        primaryProfile: primaryLighthouseData.profile,
         ...lighthouseData.metrics,
         diagnostics: lighthouseData.diagnostics,
         accessibilityDetails: lighthouseData.accessibilityDetails,
+        accessibilityIssueDetails: lighthouseData.accessibilityIssueDetails,
         seoDetails: lighthouseData.seoDetails,
+        opportunityMap: lighthouseData.opportunityMap,
+        profiles: lighthouseData.profiles,
         rawInfo: lighthouseData.rawLhr
       },
       puppeteerData: {
         screenshotPath: puppeteerData.screenshotPath,
+        screenshotFilename: puppeteerData.screenshotFilename,
+        finalUrl: puppeteerData.finalUrl,
         title: puppeteerData.title,
         metaDescription: puppeteerData.metaDescription,
+        titleLength: puppeteerData.titleLength,
+        metaDescriptionLength: puppeteerData.metaDescriptionLength,
         hasMetaDescription: puppeteerData.hasMetaDescription,
         hasViewportMeta: puppeteerData.hasViewportMeta,
+        hasCanonicalTag: puppeteerData.hasCanonicalTag,
+        canonicalUrl: puppeteerData.canonicalUrl,
+        robotsMetaContent: puppeteerData.robotsMetaContent,
+        isIndexable: puppeteerData.isIndexable,
+        isFollowable: puppeteerData.isFollowable,
+        hasNoindex: puppeteerData.hasNoindex,
+        hasNofollow: puppeteerData.hasNofollow,
+        openGraph: puppeteerData.openGraph,
+        twitterCardPresent: puppeteerData.twitterCardPresent,
+        faviconPresent: puppeteerData.faviconPresent,
+        robotsTxtUrl: puppeteerData.robotsTxtUrl,
+        robotsTxtAccessible: puppeteerData.robotsTxtAccessible,
+        sitemapUrl: puppeteerData.sitemapUrl,
+        sitemapAccessible: puppeteerData.sitemapAccessible,
         isHttps: puppeteerData.isHttps,
         loadTime: puppeteerData.loadTime,
         domElements: puppeteerData.domElements,
@@ -87,6 +277,7 @@ const processAnalysis = async (job) => {
         headings: puppeteerData.headings,
         securityHeaders: puppeteerData.securityHeaders,
         securityScore: puppeteerData.securityScore,
+        responseStatus: puppeteerData.responseStatus,
         charset: puppeteerData.charset,
         lang: puppeteerData.lang,
         images: puppeteerData.images,
@@ -98,7 +289,42 @@ const processAnalysis = async (job) => {
         hasAudio: puppeteerData.hasAudio,
         hasIframe: puppeteerData.hasIframe,
         hasSvg: puppeteerData.hasSvg,
-        bodyTextLength: puppeteerData.bodyTextLength
+        bodyTextLength: puppeteerData.bodyTextLength,
+        imagesWithoutAlt: puppeteerData.imagesWithoutAlt,
+        structuredDataScripts: puppeteerData.structuredDataScripts,
+        hreflangLinks: puppeteerData.hreflangLinks,
+        hreflangCount: puppeteerData.hreflangCount,
+        internalLinks: puppeteerData.internalLinks,
+        externalLinks: puppeteerData.externalLinks,
+        insecureFormCount: puppeteerData.insecureFormCount,
+        mixedContentRequests: puppeteerData.mixedContentRequests,
+        brokenLinks: puppeteerData.brokenLinks,
+        redirectChains: puppeteerData.redirectChains,
+        checkedLinks: puppeteerData.checkedLinks,
+        pageType: puppeteerData.pageType,
+        accessibilitySamples: puppeteerData.accessibilitySamples
+      },
+      crawlData: puppeteerData.crawlData,
+      benchmarkData,
+      fieldData,
+      siteProfile,
+      fixMode: {
+        enabled: analysisConfig.enableFixMode !== false,
+        checklist: aiReviewData.actionPlan.map((item, index) => ({
+          id: index + 1,
+          title: item.issue,
+          task: item.recommendation,
+          severity: item.severity,
+          effort: item.effort,
+          estimatedScoreImpact: item.estimatedScoreImpact
+        })),
+        starterTasks: aiReviewData.aiFixes.map((fix, index) => ({
+          id: index + 1,
+          title: fix.title,
+          category: fix.category,
+          suggestion: fix.suggestion,
+          codeExample: fix.codeExample
+        }))
       },
       techStack: puppeteerData.techStack,
       aiReviewStructured: {
@@ -117,6 +343,7 @@ const processAnalysis = async (job) => {
     
     // Save to database
     const report = await analysisService.updateReportWithResults(reportId, results);
+    await handleScheduledReportCompleted(report);
     
     await job.updateProgress(100);
     logger.info(`[Job ${job.id}] Analysis complete for ${url} - Final grade: ${aiReviewData.overallGrade}`);
@@ -131,7 +358,7 @@ const processAnalysis = async (job) => {
 /**
  * Builds the formatted AI review text from structured data
  */
-const buildAIReviewText = (aiReviewData, lighthouseData, puppeteerData) => {
+const buildAIReviewText = (aiReviewData, lighthouseData, puppeteerData, benchmarkData, fieldData, siteProfile = {}) => {
   const { recruiterReview, strengths, weaknesses, overallGrade } = aiReviewData;
   
   const sections = [
@@ -164,6 +391,8 @@ const buildAIReviewText = (aiReviewData, lighthouseData, puppeteerData) => {
     `**Accessibility Score:** ${lighthouseData.scores.accessibility}/100`,
     `**Best Practices Score:** ${lighthouseData.scores.bestPractices}/100`,
     `**Security Score:** ${puppeteerData.securityScore}/100`,
+    `**Page Type:** ${puppeteerData.pageType || 'N/A'}`,
+    `**Website Type Profile:** ${siteProfile.effectiveType || 'general'}`,
     ``,
     `**Core Web Vitals:**`,
     `- First Contentful Paint: ${lighthouseData.metrics.firstContentfulPaint}`,
@@ -181,8 +410,17 @@ const buildAIReviewText = (aiReviewData, lighthouseData, puppeteerData) => {
     `- HTTPS: ${puppeteerData.isHttps ? 'Yes' : 'No'}`,
     `- Meta Description: ${puppeteerData.hasMetaDescription ? 'Present' : 'Missing'}`,
     `- Viewport Meta: ${puppeteerData.hasViewportMeta ? 'Present' : 'Missing'}`,
+    `- Broken Links: ${puppeteerData.brokenLinks?.length || 0}`,
+    `- Redirect Chains: ${puppeteerData.redirectChains?.length || 0}`,
+    `- Hreflang Tags: ${puppeteerData.hreflangCount || 0}`,
     ``,
     `**Detected Technologies:** ${puppeteerData.techStack.join(', ') || 'None detected'}`,
+    `**Audit Profiles:** ${Object.keys(lighthouseData.profiles || {}).join(', ') || lighthouseData.profile}`,
+    `**Top Opportunities:** ${(lighthouseData.opportunityMap || []).slice(0, 3).map((item) => `${item.title} (+${item.estimatedScoreImpact})`).join(', ') || 'None highlighted'}`,
+    `**Crawl Summary:** ${puppeteerData.crawlData?.totalPagesDiscovered || 1} page(s) reviewed`,
+    `**Page Roles Found:** ${Object.entries(puppeteerData.crawlData?.roleCounts || {}).filter(([, count]) => count > 0).map(([role, count]) => `${role} (${count})`).join(', ') || 'homepage (1)'}`,
+    `**Competitor Benchmark:** ${benchmarkData?.summary || 'No competitors compared'}`,
+    `**Field Data:** ${fieldData?.available ? `LCP p75 ${fieldData.metrics?.largestContentfulPaint ?? 'N/A'}, INP p75 ${fieldData.metrics?.interactionToNextPaint ?? 'N/A'}` : fieldData?.reason || 'Unavailable'}`,
     ``,
     `*Analysis generated by SiteGrade AI*`
   ];
@@ -200,10 +438,10 @@ export const startAnalysisWorker = () => {
 
   workerInstance = new Worker('website-analysis', processAnalysis, {
     connection: redisClient,
-    concurrency: 2,
+    concurrency: workerConcurrency,
     limiter: {
-      max: 5,
-      duration: 60000
+      max: workerRateLimitMax,
+      duration: workerRateLimitDurationMs
     }
   });
 
@@ -220,6 +458,7 @@ export const startAnalysisWorker = () => {
           job.data.reportId, 
           err.message || 'Unknown error during analysis'
         );
+        await handleScheduledReportFailed(job.data.reportId, err.message || 'Unknown error during analysis');
         logger.info(`[Job ${job.id}] Report marked as failed in database`);
       } catch (dbError) {
         logger.error(`[Job ${job.id}] Failed to update report status:`, dbError);
@@ -247,6 +486,11 @@ export const startAnalysisWorker = () => {
       if (workerInstance) {
         await workerInstance.close();
       }
+      await closeSharedPuppeteerBrowser().catch((error) => {
+        logger.warn('Failed to close shared Puppeteer browser cleanly', {
+          message: error.message
+        });
+      });
       await closeRedis();
       process.exit(0);
     };
@@ -264,7 +508,11 @@ export const startAnalysisWorker = () => {
     });
   }
 
-  logger.info('Analysis worker started and listening for jobs');
+  logger.info('Analysis worker started and listening for jobs', {
+    concurrency: workerConcurrency,
+    rateLimitMax: workerRateLimitMax,
+    rateLimitDurationMs: workerRateLimitDurationMs
+  });
   return workerInstance;
 };
 

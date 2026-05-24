@@ -30,15 +30,23 @@ const aiReviewStructuredSchema = new mongoose.Schema({
   },
   actionPlan: [{
     priority: { type: String, enum: ['Quick Win', 'High Impact', 'Must Fix'], default: 'High Impact' },
+    severity: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
+    effort: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Medium' },
+    estimatedScoreImpact: { type: Number, min: 0, max: 100, default: 0 },
     issue: { type: String, default: '' },
     recommendation: { type: String, default: '' },
-    expectedOutcome: { type: String, default: '' }
+    expectedOutcome: { type: String, default: '' },
+    rationale: { type: String, default: '' }
   }],
   aiFixes: [{
     title: { type: String, default: '' },
     category: { type: String, default: '' },
+    severity: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
+    effort: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Medium' },
+    estimatedScoreImpact: { type: Number, min: 0, max: 100, default: 0 },
     suggestion: { type: String, default: '' },
-    codeExample: { type: String, default: '' }
+    codeExample: { type: String, default: '' },
+    whyItMatters: { type: String, default: '' }
   }],
   interviewSummary: {
     resumeBullets: [{ type: String }],
@@ -47,6 +55,28 @@ const aiReviewStructuredSchema = new mongoose.Schema({
     challengesSolved: [{ type: String }]
   }
 }, { _id: false });
+
+const reportCommentSchema = new mongoose.Schema({
+  authorName: { type: String, default: '' },
+  authorEmail: { type: String, default: '' },
+  message: { type: String, required: true, trim: true },
+  createdAt: { type: Date, default: Date.now }
+}, { _id: true });
+
+const reportTaskSchema = new mongoose.Schema({
+  title: { type: String, required: true, trim: true },
+  detail: { type: String, default: '' },
+  assigneeName: { type: String, default: '' },
+  assigneeEmail: { type: String, default: '' },
+  status: {
+    type: String,
+    enum: ['open', 'in_progress', 'done'],
+    default: 'open'
+  },
+  severity: { type: String, enum: ['Low', 'Medium', 'High', 'Critical'], default: 'Medium' },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+}, { _id: true });
 
 const websiteReportSchema = new mongoose.Schema(
   {
@@ -60,6 +90,69 @@ const websiteReportSchema = new mongoose.Schema(
       type: String,
       required: [true, 'URL is required'],
       trim: true
+    },
+    workspaceContext: {
+      type: {
+        workspaceId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Workspace',
+          default: null
+        },
+        workspaceName: {
+          type: String,
+          default: ''
+        }
+      },
+      default: () => ({
+        workspaceId: null,
+        workspaceName: ''
+      })
+    },
+    analysisConfig: {
+      type: {
+        scanMode: { type: String, enum: ['single', 'crawl'], default: 'single' },
+        crawlMaxPages: { type: Number, min: 1, max: 25, default: 1 },
+        auditProfiles: [{
+          type: String,
+          enum: ['mobile', 'desktop']
+        }],
+        competitorUrls: [{
+          type: String,
+          trim: true
+        }],
+        websiteType: {
+          type: String,
+          enum: ['auto', 'general', 'portfolio', 'saas', 'ecommerce', 'blog', 'docs', 'business'],
+          default: 'auto'
+        },
+        enableFixMode: { type: Boolean, default: true }
+      },
+      default: () => ({
+        scanMode: 'single',
+        crawlMaxPages: 1,
+        auditProfiles: ['mobile'],
+        competitorUrls: [],
+        websiteType: 'auto',
+        enableFixMode: true
+      })
+    },
+    scheduleContext: {
+      type: {
+        scheduleId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'ScanSchedule',
+          default: null
+        },
+        triggeredBy: {
+          type: String,
+          enum: ['manual', 'schedule'],
+          default: 'manual'
+        }
+      },
+      default: () => ({
+        scheduleId: null,
+        triggeredBy: 'manual'
+      })
     },
     status: {
       type: String,
@@ -93,6 +186,42 @@ const websiteReportSchema = new mongoose.Schema(
     puppeteerData: {
       type: mongoose.Schema.Types.Mixed,
       default: {}
+    },
+    crawlData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
+    benchmarkData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
+    fieldData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
+    siteProfile: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
+    fixMode: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
+    collaboration: {
+      type: {
+        comments: {
+          type: [reportCommentSchema],
+          default: () => ([])
+        },
+        tasks: {
+          type: [reportTaskSchema],
+          default: () => ([])
+        }
+      },
+      default: () => ({
+        comments: [],
+        tasks: []
+      })
     },
     techStack: [{
       type: String,

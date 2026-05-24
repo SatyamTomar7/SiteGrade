@@ -3,7 +3,7 @@ services:
     name: sitegrade-backend
     runtime: node
     rootDir: server
-    buildCommand: npm install
+    buildCommand: npm install && npm run install:browsers
     startCommand: npm start
     plan: free
     envVars:
@@ -11,8 +11,12 @@ services:
         value: production
       - key: PORT
         value: 5000
+      - key: PUPPETEER_CACHE_DIR
+        value: ./.cache/puppeteer
       - key: CLIENT_URL
-        value: https://sitegrade.onrender.com
+        value: https://sitegrade-frontend.onrender.com
+      - key: PUBLIC_APP_URL
+        value: https://sitegrade-frontend.onrender.com
       - key: MONGODB_URI
         sync: false
       - key: REDIS_URL

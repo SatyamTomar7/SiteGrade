@@ -9,7 +9,8 @@
     "postinstall": "npm run install:browsers",
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "worker": "node src/queues/analysisWorker.js"
+    "worker": "node src/queues/analysisWorker.js",
+    "test:unit": "node --test src/modules/analysis/analysis.helpers.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

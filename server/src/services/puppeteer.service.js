@@ -1,14 +1,37 @@
-import puppeteer from 'puppeteer';
 import path from 'path';
 import fs from 'fs/promises';
 import { logger } from '../config/logger.js';
-import { getChromeExecutablePath } from '../utils/browser.js';
+import { getPuppeteerBrowser } from '../utils/browser.js';
+import { classifyPageRole, classifyPageType } from '../modules/analysis/analysis.helpers.js';
 
-const SCREENSHOTS_DIR = process.env.SCREENSHOTS_DIR || './screenshots';
+const SCREENSHOTS_DIR = path.resolve(process.env.SCREENSHOTS_DIR || './screenshots');
+const postLoadDelayMs = Math.max(Number(process.env.PUPPETEER_POST_LOAD_DELAY_MS) || 1000, 0);
+const captureScreenshots = !['0', 'false', 'no', 'off'].includes(
+  String(process.env.ANALYSIS_CAPTURE_SCREENSHOTS ?? 'true').trim().toLowerCase()
+);
+const fetchTimeoutMs = Math.max(Number(process.env.ANALYSIS_FETCH_TIMEOUT_MS) || 8000, 1000);
 
-/**
- * Ensures screenshots directory exists
- */
+const TECH_PATTERNS = {
+  React: [{ type: 'selector', value: '[data-reactroot], [data-reactid]' }, { type: 'script', value: 'react' }, { type: 'global', value: 'React' }],
+  'Next.js': [{ type: 'script', value: '_next/static' }, { type: 'meta', value: 'next.js' }],
+  'Vue.js': [{ type: 'global', value: 'Vue' }, { type: 'selector', value: '[data-v-app]' }, { type: 'script', value: 'vue' }],
+  Angular: [{ type: 'global', value: 'angular' }, { type: 'selector', value: '[ng-app], [ng-controller]' }, { type: 'script', value: 'angular' }],
+  Svelte: [{ type: 'script', value: 'svelte' }],
+  jQuery: [{ type: 'global', value: 'jQuery' }, { type: 'script', value: 'jquery' }],
+  'Tailwind CSS': [{ type: 'script', value: 'tailwindcss' }],
+  WordPress: [{ type: 'meta', value: 'WordPress' }, { type: 'script', value: 'wp-content' }, { type: 'link', value: 'wp-content' }],
+  Shopify: [{ type: 'script', value: 'cdn.shopify.com' }, { type: 'meta', value: 'shopify' }],
+  Webflow: [{ type: 'meta', value: 'webflow' }, { type: 'script', value: 'cdn.prod.website-files.com' }],
+  Vite: [{ type: 'script', value: 'vite' }, { type: 'global', value: '__vite' }],
+  Stripe: [{ type: 'script', value: 'js.stripe.com' }],
+  Cloudflare: [{ type: 'header', value: 'cloudflare' }, { type: 'header', value: 'cf-ray' }],
+  Vercel: [{ type: 'header', value: 'vercel' }, { type: 'header', value: 'x-vercel' }],
+  Netlify: [{ type: 'header', value: 'netlify' }]
+};
+
+const ACCESSIBILITY_SAMPLE_LIMIT = 5;
+const LINK_CHECK_LIMIT = 25;
+
 const ensureDir = async () => {
   try {
     await fs.mkdir(SCREENSHOTS_DIR, { recursive: true });
@@ -17,303 +40,318 @@ const ensureDir = async () => {
   }
 };
 
-/**
- * Tech stack detection patterns
- */
-const TECH_PATTERNS = {
-  'React': [
-    { type: 'selector', value: '[data-reactroot], [data-reactid]' },
-    { type: 'script', value: 'react' },
-    { type: 'global', value: 'React' }
-  ],
-  'Next.js': [
-    { type: 'script', value: '_next/static' },
-    { type: 'meta', value: 'next.js' }
-  ],
-  'Vue.js': [
-    { type: 'global', value: 'Vue' },
-    { type: 'selector', value: '[data-v-app]' },
-    { type: 'script', value: 'vue' }
-  ],
-  'Angular': [
-    { type: 'global', value: 'angular' },
-    { type: 'selector', value: '[ng-app], [ng-controller]' },
-    { type: 'script', value: 'angular' }
-  ],
-  'Svelte': [
-    { type: 'script', value: 'svelte' }
-  ],
-  'jQuery': [
-    { type: 'global', value: 'jQuery' },
-    { type: 'script', value: 'jquery' }
-  ],
-  'Bootstrap': [
-    { type: 'css', value: 'bootstrap' },
-    { type: 'class', value: 'container-fluid' }
-  ],
-  'Tailwind CSS': [
-    { type: 'class', value: 'tailwind' },
-    { type: 'script', value: 'tailwindcss' }
-  ],
-  'WordPress': [
-    { type: 'meta', value: 'WordPress' },
-    { type: 'script', value: 'wp-content' },
-    { type: 'link', value: 'wp-content' }
-  ],
-  'Shopify': [
-    { type: 'script', value: 'cdn.shopify.com' },
-    { type: 'meta', value: 'shopify' }
-  ],
-  'Wix': [
-    { type: 'script', value: 'static.wixstatic.com' },
-    { type: 'meta', value: 'wix' }
-  ],
-  'Webflow': [
-    { type: 'meta', value: 'webflow' },
-    { type: 'script', value: 'cdn.prod.website-files.com' }
-  ],
-  'Node.js': [
-    { type: 'header', value: 'node.js' },
-    { type: 'header', value: 'express' }
-  ],
-  'PHP': [
-    { type: 'header', value: 'php' },
-    { type: 'header', value: 'x-powered-by' }
-  ],
-  'Python/Django': [
-    { type: 'header', value: 'django' },
-    { type: 'header', value: 'python' }
-  ],
-  'Ruby on Rails': [
-    { type: 'header', value: 'rails' },
-    { type: 'header', value: 'ruby' }
-  ],
-  'Laravel': [
-    { type: 'header', value: 'laravel' }
-  ],
-  'Gatsby': [
-    { type: 'script', value: 'gatsby' },
-    { type: 'global', value: '___gatsby' }
-  ],
-  'Nuxt.js': [
-    { type: 'global', value: '__NUXT__' },
-    { type: 'script', value: '_nuxt' }
-  ],
-  'Remix': [
-    { type: 'meta', value: 'remix' },
-    { type: 'script', value: 'remix' }
-  ],
-  'Astro': [
-    { type: 'script', value: 'astro' }
-  ],
-  'Vite': [
-    { type: 'script', value: 'vite' },
-    { type: 'global', value: '__vite' }
-  ],
-  'Webpack': [
-    { type: 'script', value: 'webpack' }
-  ],
-  'TypeScript': [
-    { type: 'script', value: '.ts' }
-  ],
-  'Google Analytics': [
-    { type: 'script', value: 'google-analytics.com' },
-    { type: 'script', value: 'gtag' }
-  ],
-  'Stripe': [
-    { type: 'script', value: 'js.stripe.com' }
-  ],
-  'Hotjar': [
-    { type: 'script', value: 'hotjar' }
-  ],
-  'Intercom': [
-    { type: 'script', value: 'intercom' }
-  ],
-  'HubSpot': [
-    { type: 'script', value: 'hs-scripts.com' },
-    { type: 'script', value: 'hubspot' }
-  ],
-  'Mailchimp': [
-    { type: 'script', value: 'mailchimp' }
-  ],
-  'Cloudflare': [
-    { type: 'header', value: 'cloudflare' },
-    { type: 'header', value: 'cf-ray' }
-  ],
-  'AWS': [
-    { type: 'header', value: 'amazon' },
-    { type: 'header', value: 'aws' }
-  ],
-  'Vercel': [
-    { type: 'header', value: 'vercel' },
-    { type: 'header', value: 'x-vercel' }
-  ],
-  'Netlify': [
-    { type: 'header', value: 'netlify' }
-  ],
-  'Firebase': [
-    { type: 'script', value: 'firebase' },
-    { type: 'global', value: 'firebase' }
-  ],
-  'Supabase': [
-    { type: 'script', value: 'supabase' }
-  ],
-  'Prisma': [
-    { type: 'script', value: 'prisma' }
-  ],
-  'GraphQL': [
-    { type: 'script', value: 'graphql' },
-    { type: 'global', value: '__APOLLO_CLIENT__' }
-  ],
-  'Apollo': [
-    { type: 'script', value: 'apollo' }
-  ],
-  'Redux': [
-    { type: 'global', value: '__REDUX_DEVTOOLS_EXTENSION__' },
-    { type: 'global', value: 'Redux' }
-  ],
-  'MobX': [
-    { type: 'global', value: '__mobxGlobals' }
-  ],
-  'Three.js': [
-    { type: 'global', value: 'THREE' },
-    { type: 'script', value: 'three.js' }
-  ],
-  'GSAP': [
-    { type: 'global', value: 'gsap' },
-    { type: 'script', value: 'greensock' }
-  ],
-  'jQuery UI': [
-    { type: 'script', value: 'jquery-ui' }
-  ],
-  'Lodash': [
-    { type: 'global', value: '_' },
-    { type: 'script', value: 'lodash' }
-  ],
-  'Moment.js': [
-    { type: 'global', value: 'moment' },
-    { type: 'script', value: 'moment' }
-  ],
-  'Axios': [
-    { type: 'global', value: 'axios' },
-    { type: 'script', value: 'axios' }
-  ],
-  'Socket.io': [
-    { type: 'script', value: 'socket.io' }
-  ],
-  'Auth0': [
-    { type: 'script', value: 'auth0' }
-  ],
-  'Clerk': [
-    { type: 'script', value: 'clerk' }
-  ],
-  'PostHog': [
-    { type: 'script', value: 'posthog' }
-  ],
-  'Sentry': [
-    { type: 'script', value: 'sentry' }
-  ],
-  'Datadog': [
-    { type: 'script', value: 'datadog' }
-  ],
-  'New Relic': [
-    { type: 'script', value: 'newrelic' }
-  ],
-  'Algolia': [
-    { type: 'script', value: 'algolia' }
-  ],
-  'Elasticsearch': [
-    { type: 'script', value: 'elasticsearch' }
-  ],
-  'MongoDB': [
-    { type: 'script', value: 'mongodb' }
-  ],
-  'PostgreSQL': [
-    { type: 'script', value: 'postgresql' }
-  ],
-  'MySQL': [
-    { type: 'script', value: 'mysql' }
-  ],
-  'Redis': [
-    { type: 'script', value: 'redis' }
-  ],
-  'Docker': [
-    { type: 'script', value: 'docker' }
-  ],
-  'Kubernetes': [
-    { type: 'script', value: 'kubernetes' }
-  ],
-  'Terraform': [
-    { type: 'script', value: 'terraform' }
-  ],
-  'AWS Lambda': [
-    { type: 'script', value: 'aws-lambda' }
-  ],
-  'Serverless': [
-    { type: 'script', value: 'serverless' }
-  ]
-};
-
-/**
- * Analyzes a website using Puppeteer
- * @param {string} url - URL to analyze
- * @param {string} reportId - Report ID for screenshot naming
- * @returns {Promise<Object>} - Puppeteer analysis results
- */
-export const analyzeWithPuppeteer = async (url, reportId) => {
-  await ensureDir();
-
-  const browser = await puppeteer.launch({
-    headless: 'new',
-    executablePath: getChromeExecutablePath(),
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--disable-gpu',
-      '--window-size=1920,1080'
-    ]
-  });
+const withTimeoutFetch = async (targetUrl, options = {}) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
 
   try {
-    const page = await browser.newPage();
+    return await fetch(targetUrl, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+};
+
+const checkUrlAccessible = async (targetUrl) => {
+  if (!targetUrl) return false;
+
+  try {
+    const response = await withTimeoutFetch(targetUrl, {
+      method: 'GET',
+      redirect: 'follow'
+    });
+
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+const inspectLink = async (targetUrl) => {
+  const chain = [];
+  let currentUrl = targetUrl;
+
+  try {
+    for (let i = 0; i < 5; i += 1) {
+      const response = await withTimeoutFetch(currentUrl, {
+        method: 'GET',
+        redirect: 'manual'
+      });
+
+      chain.push({
+        url: currentUrl,
+        status: response.status
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const nextLocation = response.headers.get('location');
+        if (!nextLocation) {
+          break;
+        }
+
+        currentUrl = new URL(nextLocation, currentUrl).toString();
+        continue;
+      }
+
+      return {
+        ok: response.ok,
+        finalUrl: currentUrl,
+        status: response.status,
+        redirectChain: chain
+      };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      finalUrl: currentUrl,
+      status: 0,
+      redirectChain: chain,
+      error: error.message
+    };
+  }
+
+  return {
+    ok: true,
+    finalUrl: currentUrl,
+    status: chain.at(-1)?.status || 200,
+    redirectChain: chain
+  };
+};
+
+const inspectLinks = async (links = []) => {
+  const uniqueLinks = [...new Set(links.filter(Boolean))].slice(0, LINK_CHECK_LIMIT);
+  const results = await Promise.all(uniqueLinks.map((link) => inspectLink(link)));
+
+  const brokenLinks = [];
+  const redirectChains = [];
+
+  results.forEach((result, index) => {
+    if (!result.ok || result.status >= 400) {
+      brokenLinks.push({
+        url: uniqueLinks[index],
+        status: result.status || 'ERR',
+        finalUrl: result.finalUrl
+      });
+    }
+
+    if ((result.redirectChain || []).length > 1) {
+      redirectChains.push({
+        url: uniqueLinks[index],
+        steps: result.redirectChain
+      });
+    }
+  });
+
+  return {
+    checkedLinks: uniqueLinks.length,
+    brokenLinks,
+    redirectChains
+  };
+};
+
+const summarizeAccessibilityDetails = (pageData) => ({
+  imagesMissingAlt: pageData.imageAltSamples.slice(0, ACCESSIBILITY_SAMPLE_LIMIT),
+  unlabeledInputs: pageData.unlabeledInputSamples.slice(0, ACCESSIBILITY_SAMPLE_LIMIT),
+  buttonsMissingText: pageData.buttonTextSamples.slice(0, ACCESSIBILITY_SAMPLE_LIMIT),
+  skippedHeadingLevels: pageData.headingSequence.skippedLevels
+});
+
+const detectTechStack = async (page, networkScripts, networkStyles, headers, pageData) => {
+  const detected = new Set();
+
+  const globals = await page.evaluate(() => {
+    const checks = {
+      React: typeof React !== 'undefined',
+      'Vue.js': typeof Vue !== 'undefined',
+      Angular: typeof angular !== 'undefined',
+      jQuery: typeof jQuery !== 'undefined',
+      Vite: typeof __vite !== 'undefined'
+    };
+    return Object.entries(checks).filter(([, exists]) => exists).map(([name]) => name);
+  });
+
+  globals.forEach((tech) => detected.add(tech));
+
+  const allSources = [
+    ...networkScripts,
+    ...networkStyles,
+    ...pageData.scripts,
+    ...pageData.stylesheets,
+    ...pageData.metas.map((meta) => `${meta.name || ''} ${meta.content || ''}`)
+  ];
+
+  const headerValues = Object.entries(headers).map(([key, value]) => `${key} ${value}`).join(' ');
+
+  for (const [tech, patterns] of Object.entries(TECH_PATTERNS)) {
+    if (detected.has(tech)) continue;
+
+    for (const pattern of patterns) {
+      let found = false;
+
+      if (pattern.type === 'script' || pattern.type === 'link') {
+        found = allSources.some((src) => src.toLowerCase().includes(pattern.value.toLowerCase()));
+      } else if (pattern.type === 'header') {
+        found = headerValues.toLowerCase().includes(pattern.value.toLowerCase());
+      } else if (pattern.type === 'meta') {
+        found = pageData.metas.some((meta) =>
+          (meta.name || '').toLowerCase().includes(pattern.value.toLowerCase()) ||
+          (meta.content || '').toLowerCase().includes(pattern.value.toLowerCase())
+        );
+      } else if (pattern.type === 'selector') {
+        found = await page.evaluate((selector) => Boolean(document.querySelector(selector)), pattern.value);
+      } else if (pattern.type === 'global') {
+        found = globals.includes(tech);
+      }
+
+      if (found) {
+        detected.add(tech);
+        break;
+      }
+    }
+  }
+
+  return Array.from(detected).sort();
+};
+
+const crawlSite = async (browser, startUrl, internalCandidateUrls, maxPages) => {
+  const startRole = classifyPageRole({ url: startUrl, title: '' });
+  const startType = classifyPageType({ url: startUrl });
+
+  if (maxPages <= 1) {
+    return {
+      pages: [{
+        url: startUrl,
+        pageType: startType,
+        pageRole: startRole,
+        status: 200,
+        loadTimeMs: 0
+      }],
+      totalPagesDiscovered: 1,
+      successfulPages: 1,
+      pageTypes: { [startType]: 1 },
+      roleCounts: { [startRole]: 1 },
+      roleHighlights: [{ role: startRole, url: startUrl, pageType: startType }]
+    };
+  }
+
+  const queue = internalCandidateUrls.filter((candidate) => candidate !== startUrl);
+  const pages = [];
+  const pageTypes = {};
+  const roleCounts = { [startRole]: 1 };
+  const roleHighlights = [{ role: startRole, url: startUrl, pageType: startType }];
+  let successfulPages = 1;
+
+  for (const targetUrl of queue.slice(0, maxPages - 1)) {
+    let page;
+
+    try {
+      page = await browser.newPage();
+      await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+      const startedAt = Date.now();
+      const response = await page.goto(targetUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      });
+      const title = await page.title();
+      const bodyTextLength = await page.evaluate(() => document.body?.innerText?.length || 0);
+      const hasForm = await page.evaluate(() => document.querySelectorAll('form').length > 0);
+      const pageType = classifyPageType({ url: targetUrl, title, bodyTextLength, hasForm });
+      const pageRole = classifyPageRole({ url: targetUrl, title });
+
+      pages.push({
+        url: targetUrl,
+        title,
+        status: response?.status() || 0,
+        loadTimeMs: Date.now() - startedAt,
+        pageType,
+        pageRole
+      });
+
+      pageTypes[pageType] = (pageTypes[pageType] || 0) + 1;
+      roleCounts[pageRole] = (roleCounts[pageRole] || 0) + 1;
+      successfulPages += 1;
+      if (!roleHighlights.some((item) => item.role === pageRole)) {
+        roleHighlights.push({ role: pageRole, url: targetUrl, pageType });
+      }
+    } catch (error) {
+      pages.push({
+        url: targetUrl,
+        title: '',
+        status: 0,
+        loadTimeMs: 0,
+        pageType: 'unknown',
+        pageRole: 'other',
+        error: error.message
+      });
+      pageTypes.unknown = (pageTypes.unknown || 0) + 1;
+      roleCounts.other = (roleCounts.other || 0) + 1;
+    } finally {
+      if (page) {
+        await page.close().catch(() => {});
+      }
+    }
+  }
+
+  return {
+    pages: [
+      { url: startUrl, pageType: startType, pageRole: startRole, status: 200, loadTimeMs: 0 },
+      ...pages
+    ],
+    totalPagesDiscovered: Math.min(maxPages, queue.length + 1),
+    successfulPages,
+    pageTypes,
+    roleCounts,
+    roleHighlights
+  };
+};
+
+export const analyzeWithPuppeteer = async (url, reportId, options = {}) => {
+  await ensureDir();
+
+  const browser = await getPuppeteerBrowser();
+  let page;
+
+  try {
+    page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 1 });
 
-    // Collect console errors
     const consoleErrors = [];
+    const scripts = [];
+    const stylesheets = [];
+    const networkHeaders = {};
+    const mixedContentRequests = [];
+
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
         consoleErrors.push(msg.text());
       }
     });
 
-    // Collect network requests for tech detection
-    const scripts = [];
-    const stylesheets = [];
-    const headers = {};
-    
     page.on('response', async (response) => {
       try {
-        const url = response.url();
-        const headerObj = response.headers();
-        
-        Object.entries(headerObj).forEach(([key, value]) => {
-          headers[key.toLowerCase()] = value;
+        const responseUrl = response.url();
+        Object.entries(response.headers()).forEach(([key, value]) => {
+          networkHeaders[key.toLowerCase()] = value;
         });
 
-        if (url.endsWith('.js') || url.includes('.js?')) {
-          scripts.push(url);
+        if (responseUrl.startsWith('http://')) {
+          mixedContentRequests.push(responseUrl);
         }
-        if (url.endsWith('.css') || url.includes('.css?')) {
-          stylesheets.push(url);
+
+        if (responseUrl.endsWith('.js') || responseUrl.includes('.js?')) {
+          scripts.push(responseUrl);
+        }
+
+        if (responseUrl.endsWith('.css') || responseUrl.includes('.css?')) {
+          stylesheets.push(responseUrl);
         }
       } catch {
-        // Ignore errors from responses
+        // Ignore response parsing issues.
       }
     });
 
-    // Navigate and measure load time
     const startTime = Date.now();
     const navigationResponse = await page.goto(url, {
       waitUntil: 'networkidle2',
@@ -325,39 +363,74 @@ export const analyzeWithPuppeteer = async (url, reportId) => {
       throw new Error('Failed to load page - no navigation response');
     }
 
-    // Wait a bit for any lazy-loaded content
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    const documentHeaders = Object.fromEntries(
+      Object.entries(navigationResponse.headers()).map(([key, value]) => [key.toLowerCase(), value])
+    );
+    const finalUrl = page.url();
+    const siteOrigin = new URL(finalUrl).origin;
 
-    // Take screenshot
-    const screenshotPath = path.join(SCREENSHOTS_DIR, `${reportId}.png`);
-    await page.screenshot({
-      path: screenshotPath,
-      fullPage: true,
-      type: 'png'
-    });
+    if (postLoadDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, postLoadDelayMs));
+    }
 
-    // Extract page data
+    let screenshotFilename = null;
+    let screenshotPath = null;
+
+    if (captureScreenshots) {
+      screenshotFilename = `${reportId}.png`;
+      screenshotPath = path.join(SCREENSHOTS_DIR, screenshotFilename);
+      await page.screenshot({
+        path: screenshotPath,
+        fullPage: true,
+        type: 'png'
+      });
+    }
+
     const pageData = await page.evaluate(() => {
       const getMetaContent = (name) => {
         const meta = document.querySelector(`meta[name="${name}"], meta[property="${name}"]`);
         return meta ? meta.getAttribute('content') : null;
       };
 
-      const headings = {
-        h1: document.querySelectorAll('h1').length,
-        h2: document.querySelectorAll('h2').length,
-        h3: document.querySelectorAll('h3').length,
-        h4: document.querySelectorAll('h4').length,
-        h5: document.querySelectorAll('h5').length,
-        h6: document.querySelectorAll('h6').length
-      };
-
-      const allScripts = Array.from(document.querySelectorAll('script[src]')).map(s => s.src);
-      const allStyles = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map(l => l.href);
-      const allMetas = Array.from(document.querySelectorAll('meta')).map(m => ({
-        name: m.getAttribute('name') || m.getAttribute('property'),
-        content: m.getAttribute('content')
+      const canonicalLink = document.querySelector('link[rel="canonical"]');
+      const robotsMeta = document.querySelector('meta[name="robots"]');
+      const hreflangLinks = Array.from(document.querySelectorAll('link[rel="alternate"][hreflang]')).map((link) => ({
+        hreflang: link.getAttribute('hreflang'),
+        href: link.getAttribute('href')
       }));
+      const imageElements = Array.from(document.querySelectorAll('img'));
+      const schemaScripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'));
+      const anchors = Array.from(document.querySelectorAll('a[href]')).map((anchor) => ({
+        href: anchor.href,
+        text: anchor.textContent?.trim() || '',
+        rel: anchor.getAttribute('rel') || ''
+      }));
+      const forms = Array.from(document.querySelectorAll('form'));
+      const unlabeledInputs = Array.from(document.querySelectorAll('input, textarea, select')).filter((field) => {
+        const id = field.getAttribute('id');
+        const ariaLabel = field.getAttribute('aria-label');
+        const ariaLabelledBy = field.getAttribute('aria-labelledby');
+        const label = id ? document.querySelector(`label[for="${id}"]`) : null;
+        return !ariaLabel && !ariaLabelledBy && !label;
+      });
+      const emptyButtons = Array.from(document.querySelectorAll('button')).filter((button) => {
+        return !(button.textContent || '').trim() && !button.getAttribute('aria-label');
+      });
+      const headings = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6')).map((heading) => Number(heading.tagName.slice(1)));
+      const skippedLevels = [];
+
+      for (let i = 1; i < headings.length; i += 1) {
+        if (headings[i] - headings[i - 1] > 1) {
+          skippedLevels.push({
+            from: headings[i - 1],
+            to: headings[i]
+          });
+        }
+      }
+
+      const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || '';
+      const ogDescription = document.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
+      const ogImage = document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
 
       return {
         title: document.title,
@@ -365,14 +438,28 @@ export const analyzeWithPuppeteer = async (url, reportId) => {
         viewport: getMetaContent('viewport'),
         charset: document.characterSet,
         lang: document.documentElement.lang,
-        headings,
+        headings: {
+          h1: document.querySelectorAll('h1').length,
+          h2: document.querySelectorAll('h2').length,
+          h3: document.querySelectorAll('h3').length,
+          h4: document.querySelectorAll('h4').length,
+          h5: document.querySelectorAll('h5').length,
+          h6: document.querySelectorAll('h6').length
+        },
+        headingSequence: {
+          total: headings.length,
+          skippedLevels
+        },
         domElements: document.querySelectorAll('*').length,
-        images: document.querySelectorAll('img').length,
-        links: document.querySelectorAll('a').length,
-        scripts: allScripts,
-        stylesheets: allStyles,
-        metas: allMetas,
-        hasForm: document.querySelectorAll('form').length > 0,
+        images: imageElements.length,
+        links: anchors.length,
+        scripts: Array.from(document.querySelectorAll('script[src]')).map((script) => script.src),
+        stylesheets: Array.from(document.querySelectorAll('link[rel="stylesheet"]')).map((link) => link.href),
+        metas: Array.from(document.querySelectorAll('meta')).map((meta) => ({
+          name: meta.getAttribute('name') || meta.getAttribute('property'),
+          content: meta.getAttribute('content')
+        })),
+        hasForm: forms.length > 0,
         hasTable: document.querySelectorAll('table').length > 0,
         hasCanvas: document.querySelectorAll('canvas').length > 0,
         hasVideo: document.querySelectorAll('video').length > 0,
@@ -380,48 +467,148 @@ export const analyzeWithPuppeteer = async (url, reportId) => {
         hasIframe: document.querySelectorAll('iframe').length > 0,
         hasSvg: document.querySelectorAll('svg').length > 0,
         htmlSize: document.documentElement.outerHTML.length,
-        bodyTextLength: document.body.innerText.length
+        bodyTextLength: document.body.innerText.length,
+        canonicalUrl: canonicalLink?.href || '',
+        robotsMetaContent: robotsMeta?.getAttribute('content') || '',
+        openGraph: {
+          titlePresent: Boolean(ogTitle),
+          descriptionPresent: Boolean(ogDescription),
+          imagePresent: Boolean(ogImage)
+        },
+        twitterCardPresent: Boolean(document.querySelector('meta[name="twitter:card"]')?.getAttribute('content')),
+        faviconPresent: Boolean(document.querySelector('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')),
+        imagesWithoutAlt: imageElements.filter((img) => !img.hasAttribute('alt') || !img.getAttribute('alt')?.trim()).length,
+        imageAltSamples: imageElements
+          .filter((img) => !img.hasAttribute('alt') || !img.getAttribute('alt')?.trim())
+          .slice(0, 5)
+          .map((img) => ({
+            src: img.currentSrc || img.getAttribute('src') || '',
+            alt: img.getAttribute('alt') || ''
+          })),
+        structuredDataScripts: schemaScripts.length,
+        anchors,
+        hreflangLinks,
+        internalLinks: anchors.filter((anchor) => {
+          try {
+            return new URL(anchor.href, window.location.href).origin === window.location.origin;
+          } catch {
+            return false;
+          }
+        }).length,
+        externalLinks: anchors.filter((anchor) => {
+          try {
+            return new URL(anchor.href, window.location.href).origin !== window.location.origin;
+          } catch {
+            return false;
+          }
+        }).length,
+        insecureFormCount: forms.filter((form) => {
+          const action = form.getAttribute('action');
+          if (!action) return window.location.protocol !== 'https:';
+          try {
+            return new URL(action, window.location.href).protocol === 'http:';
+          } catch {
+            return false;
+          }
+        }).length,
+        unlabeledInputSamples: unlabeledInputs.slice(0, 5).map((field) => ({
+          tag: field.tagName.toLowerCase(),
+          name: field.getAttribute('name') || '',
+          type: field.getAttribute('type') || ''
+        })),
+        buttonTextSamples: emptyButtons.slice(0, 5).map((button) => ({
+          html: button.outerHTML.slice(0, 200)
+        }))
       };
     });
 
-    // Detect tech stack
-    const techStack = await detectTechStack(page, scripts, stylesheets, headers, pageData);
-
-    // Calculate page size estimate
+    const techStack = await detectTechStack(page, scripts, stylesheets, documentHeaders, pageData);
     const pageSizeKB = Math.round(pageData.htmlSize / 1024);
+    const isHttps = finalUrl.startsWith('https://');
+    const robotsMetaLower = (pageData.robotsMetaContent || '').toLowerCase();
+    const hasNoindex = robotsMetaLower.includes('noindex');
+    const hasNofollow = robotsMetaLower.includes('nofollow');
+    const robotsTxtUrl = `${siteOrigin}/robots.txt`;
+    const sitemapUrl = `${siteOrigin}/sitemap.xml`;
+    const pageType = classifyPageType({
+      url: finalUrl,
+      title: pageData.title,
+      bodyTextLength: pageData.bodyTextLength,
+      hasForm: pageData.hasForm,
+      techStack
+    });
 
-    // Check HTTPS
-    const isHttps = url.startsWith('https://');
+    const [robotsTxtAccessible, sitemapAccessible, linkInspection] = await Promise.all([
+      checkUrlAccessible(robotsTxtUrl),
+      checkUrlAccessible(sitemapUrl),
+      inspectLinks(pageData.anchors.map((anchor) => anchor.href))
+    ]);
 
-    // Check security headers
+    const internalCandidateUrls = [
+      finalUrl,
+      ...pageData.anchors
+        .map((anchor) => anchor.href)
+        .filter((href) => {
+          try {
+            return new URL(href).origin === siteOrigin;
+          } catch {
+            return false;
+          }
+        })
+    ];
+    const crawlData = await crawlSite(
+      browser,
+      finalUrl,
+      [...new Set(internalCandidateUrls)],
+      options.scanMode === 'crawl' ? Math.min(Math.max(Number(options.crawlMaxPages) || 1, 1), 10) : 1
+    );
+
     const securityHeaders = {
-      'content-security-policy': !!headers['content-security-policy'],
-      'strict-transport-security': !!headers['strict-transport-security'],
-      'x-frame-options': !!headers['x-frame-options'],
-      'x-content-type-options': !!headers['x-content-type-options'],
-      'referrer-policy': !!headers['referrer-policy'],
-      'permissions-policy': !!headers['permissions-policy']
+      'content-security-policy': !!documentHeaders['content-security-policy'],
+      'strict-transport-security': !!documentHeaders['strict-transport-security'],
+      'x-frame-options': !!documentHeaders['x-frame-options'],
+      'x-content-type-options': !!documentHeaders['x-content-type-options'],
+      'referrer-policy': !!documentHeaders['referrer-policy'],
+      'permissions-policy': !!documentHeaders['permissions-policy']
     };
 
-    const securityScore = Math.round(
-      (Object.values(securityHeaders).filter(Boolean).length / Object.keys(securityHeaders).length) * 100
-    );
+    const securitySignals = [isHttps, ...Object.values(securityHeaders)];
+    const securityScore = Math.round((securitySignals.filter(Boolean).length / securitySignals.length) * 100);
 
     return {
       screenshotPath,
+      screenshotFilename,
+      finalUrl,
       title: pageData.title,
       metaDescription: pageData.description,
+      titleLength: pageData.title?.length || 0,
+      metaDescriptionLength: pageData.description?.length || 0,
       hasMetaDescription: !!pageData.description,
       hasViewportMeta: !!pageData.viewport,
+      hasCanonicalTag: !!pageData.canonicalUrl,
+      canonicalUrl: pageData.canonicalUrl,
+      robotsMetaContent: pageData.robotsMetaContent,
+      isIndexable: !hasNoindex,
+      isFollowable: !hasNofollow,
+      hasNoindex,
+      hasNofollow,
+      openGraph: pageData.openGraph,
+      twitterCardPresent: pageData.twitterCardPresent,
+      faviconPresent: pageData.faviconPresent,
+      robotsTxtUrl,
+      robotsTxtAccessible,
+      sitemapUrl,
+      sitemapAccessible,
       isHttps,
       loadTime: `${loadTime}ms`,
       domElements: pageData.domElements,
       pageSize: `${pageSizeKB}KB`,
       consoleErrors: consoleErrors.length,
       headings: pageData.headings,
-      techStack,
+      pageType,
       securityHeaders,
       securityScore,
+      responseStatus: navigationResponse.status(),
       charset: pageData.charset,
       lang: pageData.lang,
       images: pageData.images,
@@ -434,103 +621,29 @@ export const analyzeWithPuppeteer = async (url, reportId) => {
       hasIframe: pageData.hasIframe,
       hasSvg: pageData.hasSvg,
       bodyTextLength: pageData.bodyTextLength,
+      imagesWithoutAlt: pageData.imagesWithoutAlt,
+      structuredDataScripts: pageData.structuredDataScripts,
+      hreflangLinks: pageData.hreflangLinks,
+      hreflangCount: pageData.hreflangLinks.length,
+      internalLinks: pageData.internalLinks,
+      externalLinks: pageData.externalLinks,
+      insecureFormCount: pageData.insecureFormCount,
+      mixedContentRequests: mixedContentRequests.length,
       scripts: pageData.scripts,
-      stylesheets: pageData.stylesheets
+      stylesheets: pageData.stylesheets,
+      brokenLinks: linkInspection.brokenLinks,
+      redirectChains: linkInspection.redirectChains,
+      checkedLinks: linkInspection.checkedLinks,
+      accessibilitySamples: summarizeAccessibilityDetails(pageData),
+      crawlData,
+      techStack
     };
   } catch (error) {
     logger.error('Puppeteer analysis error:', error);
     throw error;
   } finally {
-    await browser.close();
-  }
-};
-
-/**
- * Detects tech stack from various signals
- */
-const detectTechStack = async (page, networkScripts, networkStyles, headers, pageData) => {
-  const detected = new Set();
-
-  // Check globals
-  const globals = await page.evaluate(() => {
-    const checks = {
-      'React': typeof React !== 'undefined',
-      'Vue.js': typeof Vue !== 'undefined',
-      'Angular': typeof angular !== 'undefined',
-      'jQuery': typeof jQuery !== 'undefined',
-      'GSAP': typeof gsap !== 'undefined',
-      'Three.js': typeof THREE !== 'undefined',
-      'Redux': typeof Redux !== 'undefined' || typeof __REDUX_DEVTOOLS_EXTENSION__ !== 'undefined',
-      'MobX': typeof __mobxGlobals !== 'undefined',
-      'Axios': typeof axios !== 'undefined',
-      'Moment.js': typeof moment !== 'undefined',
-      'Lodash': typeof _ !== 'undefined',
-      'Socket.io': typeof io !== 'undefined',
-      'Firebase': typeof firebase !== 'undefined',
-      'Gatsby': typeof ___gatsby !== 'undefined',
-      'Nuxt.js': typeof __NUXT__ !== 'undefined',
-      'Vite': typeof __vite !== 'undefined'
-    };
-    return Object.entries(checks).filter(([_, exists]) => exists).map(([name]) => name);
-  });
-
-  globals.forEach(tech => detected.add(tech));
-
-  // Check all sources for patterns
-  const allSources = [
-    ...networkScripts,
-    ...networkStyles,
-    ...pageData.scripts,
-    ...pageData.stylesheets,
-    ...pageData.metas.map(m => `${m.name || ''} ${m.content || ''}`)
-  ];
-
-  const headerValues = Object.entries(headers).map(([k, v]) => `${k} ${v}`).join(' ');
-
-  for (const [tech, patterns] of Object.entries(TECH_PATTERNS)) {
-    if (detected.has(tech)) continue;
-
-    for (const pattern of patterns) {
-      let found = false;
-
-      if (pattern.type === 'script' || pattern.type === 'css' || pattern.type === 'link') {
-        found = allSources.some(src => src.toLowerCase().includes(pattern.value.toLowerCase()));
-      } else if (pattern.type === 'header') {
-        found = headerValues.toLowerCase().includes(pattern.value.toLowerCase());
-      } else if (pattern.type === 'meta') {
-        found = pageData.metas.some(m => 
-          (m.name || '').toLowerCase().includes(pattern.value.toLowerCase()) ||
-          (m.content || '').toLowerCase().includes(pattern.value.toLowerCase())
-        );
-      } else if (pattern.type === 'class') {
-        const hasClass = await page.evaluate((cls) => {
-          return document.querySelector(`[class*="${cls}"]`) !== null;
-        }, pattern.value);
-        found = hasClass;
-      }
-
-      if (found) {
-        detected.add(tech);
-        break;
-      }
+    if (page) {
+      await page.close().catch(() => {});
     }
   }
-
-  // Additional checks from page content
-  const contentChecks = await page.evaluate(() => {
-    const html = document.documentElement.innerHTML;
-    const checks = [];
-    if (html.includes('wp-content')) checks.push('WordPress');
-    if (html.includes('Shopify')) checks.push('Shopify');
-    if (html.includes('Webflow')) checks.push('Webflow');
-    if (html.includes('Wix')) checks.push('Wix');
-    if (html.includes('data-reactroot')) checks.push('React');
-    if (html.includes('data-v-app')) checks.push('Vue.js');
-    if (html.includes('ng-app')) checks.push('Angular');
-    return checks;
-  });
-
-  contentChecks.forEach(tech => detected.add(tech));
-
-  return Array.from(detected).sort();
 };
