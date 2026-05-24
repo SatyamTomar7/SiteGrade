@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import { buildAssetUrl } from '../api/axios';
 import { ScoreCard } from './ScoreCard';
 import { RadarChartComponent } from './RadarChart';
 import { TechBadge } from './TechBadge';
@@ -101,6 +102,34 @@ const getGradeStyles = (grade) => {
   return 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800';
 };
 
+const getSeverityStyles = (severity) => {
+  if (severity === 'Critical') {
+    return 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300';
+  }
+
+  if (severity === 'High') {
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+  }
+
+  if (severity === 'Low') {
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  }
+
+  return 'bg-slate-100 text-slate-700 dark:bg-dark-border dark:text-slate-300';
+};
+
+const getEffortStyles = (effort) => {
+  if (effort === 'High') {
+    return 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900';
+  }
+
+  if (effort === 'Low') {
+    return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
+  }
+
+  return 'bg-slate-100 text-slate-700 dark:bg-dark-border dark:text-slate-300';
+};
+
 const splitReviewParagraphs = (reviewText) => {
   if (!reviewText) {
     return [];
@@ -129,9 +158,19 @@ export const ReportContent = ({
   const portfolioReadiness = aiReviewStructured.portfolioReadiness || {};
   const interviewSummary = aiReviewStructured.interviewSummary || {};
   const reviewParagraphs = splitReviewParagraphs(report.aiReview);
-  const overallScore = Math.round(
+  const analysisConfig = report.analysisConfig || {};
+  const crawlData = report.crawlData || {};
+  const siteProfile = report.siteProfile || {};
+  const roleCoverage = siteProfile.roleCoverage || {};
+  const benchmarkData = report.benchmarkData || {};
+  const fieldData = report.fieldData || {};
+  const fixMode = report.fixMode || {};
+  const overallScore = report.overallScore ?? Math.round(
     (scores.performance + scores.seo + scores.accessibility + scores.security + scores.bestPractices) / 5
   );
+  const screenshotUrl = report.puppeteerData?.screenshotFilename
+    ? buildAssetUrl(`/screenshots/${report.puppeteerData.screenshotFilename}`)
+    : '';
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-dark-bg py-8 px-4 sm:px-6 lg:px-8">
@@ -206,6 +245,48 @@ export const ReportContent = ({
           />
         </div>
 
+        <div className="card mb-8">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+            <ScanLine className="w-5 h-5 text-primary-600" />
+            Audit Configuration
+          </h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+            <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+              <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Mode</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{analysisConfig.scanMode || 'single'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+              <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Site Type</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white capitalize">{siteProfile.effectiveType || analysisConfig.websiteType || 'general'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+              <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Profiles</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{(analysisConfig.auditProfiles || []).join(', ') || 'mobile'}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+              <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Crawl Limit</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{analysisConfig.crawlMaxPages || 1}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+              <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Fix Mode</p>
+              <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{fixMode.enabled ? 'Enabled' : 'Disabled'}</p>
+            </div>
+          </div>
+          {(siteProfile.detectedType || roleCoverage.expectedRoles?.length > 0) && (
+            <div className="mt-4 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-surface p-4">
+              <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Scoring Profile</p>
+              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                Requested: <span className="font-semibold capitalize text-slate-900 dark:text-white">{analysisConfig.websiteType || 'auto'}</span> | Detected: <span className="font-semibold capitalize text-slate-900 dark:text-white">{siteProfile.detectedType || siteProfile.effectiveType || 'general'}</span>
+              </p>
+              {roleCoverage.expectedRoles?.length > 0 && (
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+                  Expected roles: {roleCoverage.expectedRoles.join(', ')} | Missing: {roleCoverage.missingRoles?.length ? roleCoverage.missingRoles.join(', ') : 'none'}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
         {portfolioReadiness.overallScore > 0 && (
           <div className="card mb-8">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
@@ -255,7 +336,7 @@ export const ReportContent = ({
                       Overall AI Assessment
                     </p>
                     <p className="text-xl font-semibold text-slate-900 dark:text-white">
-                      Candidate-style review summary
+                      Website quality summary
                     </p>
                   </div>
                   <div className={`self-start rounded-full border px-4 py-2 text-lg font-bold sm:self-auto ${getGradeStyles(aiReviewStructured.grade)}`}>
@@ -326,12 +407,12 @@ export const ReportContent = ({
           <div className="card mb-8">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
               <Briefcase className="w-5 h-5 text-primary-600" />
-              Recruiter Mode
+              Decision Summary
             </h3>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-5">
                 <p className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-                  Hiring Signal
+                  Quality Signal
                 </p>
                 <p className="text-xl font-semibold text-slate-900 dark:text-white">
                   {recruiterMode.hiringSignal || 'N/A'}
@@ -339,7 +420,7 @@ export const ReportContent = ({
               </div>
               <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-5 lg:col-span-2">
                 <p className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
-                  Recruiter Verdict
+                  Verdict
                 </p>
                 <p className="text-slate-700 dark:text-slate-200 leading-7">
                   {recruiterMode.recruiterVerdict || 'No recruiter verdict available.'}
@@ -347,7 +428,7 @@ export const ReportContent = ({
               </div>
               <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/70 dark:bg-blue-900/10 p-5 lg:col-span-3">
                 <p className="text-sm font-semibold uppercase tracking-wider text-blue-700 dark:text-blue-300 mb-2">
-                  Resume Pitch
+                  Reusable Pitch
                 </p>
                 <p className="text-slate-700 dark:text-slate-200 leading-7">
                   {recruiterMode.resumePitch || 'No resume pitch available.'}
@@ -361,7 +442,7 @@ export const ReportContent = ({
           <div className="card mb-8">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
               <FileBadge2 className="w-5 h-5 text-primary-600" />
-              Interview-Ready Summary
+              Reusable Summary
             </h3>
             <div className="space-y-6">
               {interviewSummary.projectDescription && (
@@ -376,7 +457,7 @@ export const ReportContent = ({
               {interviewSummary.resumeBullets?.length > 0 && (
                 <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-5">
                   <p className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
-                    Resume Bullets
+                    Key Takeaways
                   </p>
                   <ul className="space-y-3 list-disc pl-5">
                     {interviewSummary.resumeBullets.map((bullet, index) => (
@@ -439,9 +520,204 @@ export const ReportContent = ({
                       {item.priority}
                     </span>
                   </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getSeverityStyles(item.severity)}`}>
+                      Severity: {item.severity || 'Medium'}
+                    </span>
+                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getEffortStyles(item.effort)}`}>
+                      Effort: {item.effort || 'Medium'}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                      Impact: +{item.estimatedScoreImpact ?? 0}
+                    </span>
+                  </div>
                   <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
                     Expected outcome: {item.expectedOutcome}
                   </p>
+                  {item.rationale && (
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                      Why this matters: {item.rationale}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {fixMode.enabled && (fixMode.checklist?.length > 0 || fixMode.starterTasks?.length > 0) && (
+          <div className="card mb-8">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+              <Wrench className="w-5 h-5 text-primary-600" />
+              Fix Mode
+            </h3>
+            {fixMode.checklist?.length > 0 && (
+              <div className="space-y-3 mb-6">
+                {fixMode.checklist.map((item) => (
+                  <div key={item.id} className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-lg font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                      <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getSeverityStyles(item.severity)}`}>
+                        {item.severity}
+                      </span>
+                      <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getEffortStyles(item.effort)}`}>
+                        {item.effort}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-slate-600 dark:text-slate-300">{item.task}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {fixMode.starterTasks?.length > 0 && (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {fixMode.starterTasks.map((task) => (
+                  <div key={task.id} className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+                    <p className="text-lg font-semibold text-slate-900 dark:text-white">{task.title}</p>
+                    <p className="text-sm uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-1">{task.category}</p>
+                    <p className="mt-3 text-slate-600 dark:text-slate-300">{task.suggestion}</p>
+                    {task.codeExample && (
+                      <pre className="mt-4 rounded-lg bg-slate-900 p-4 text-xs text-slate-100 whitespace-pre-wrap break-words">{task.codeExample}</pre>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(benchmarkData.entries?.length > 0 || benchmarkData.summary) && (
+          <div className="card mb-8">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+              <Target className="w-5 h-5 text-primary-600" />
+              Competitor Benchmark
+            </h3>
+            <p className="text-slate-600 dark:text-slate-300 mb-4">{benchmarkData.summary || 'Benchmark not available.'}</p>
+            {benchmarkData.entries?.length > 0 && (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {benchmarkData.entries.map((entry, index) => (
+                  <div key={`${entry.url}-${index}`} className={`rounded-xl border p-4 ${
+                    entry.isTarget
+                      ? 'border-primary-300 bg-primary-50/70 dark:border-primary-800 dark:bg-primary-900/10'
+                      : 'border-slate-200 bg-slate-50 dark:border-dark-border dark:bg-dark-surface'
+                  }`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-slate-900 dark:text-white break-all">{entry.label}</p>
+                      <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white dark:bg-slate-100 dark:text-slate-900">
+                        #{index + 1}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{entry.pageType || 'unknown'}</p>
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div><span className="text-slate-500 dark:text-slate-400">Overall</span><p className="font-semibold text-slate-900 dark:text-white">{entry.overallScore}</p></div>
+                      <div><span className="text-slate-500 dark:text-slate-400">Performance</span><p className="font-semibold text-slate-900 dark:text-white">{entry.scores?.performance}</p></div>
+                      <div><span className="text-slate-500 dark:text-slate-400">SEO</span><p className="font-semibold text-slate-900 dark:text-white">{entry.scores?.seo}</p></div>
+                      <div><span className="text-slate-500 dark:text-slate-400">Accessibility</span><p className="font-semibold text-slate-900 dark:text-white">{entry.scores?.accessibility}</p></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(crawlData.totalPagesDiscovered || report.puppeteerData?.pageType) && (
+          <div className="card mb-8">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+              <Globe className="w-5 h-5 text-primary-600" />
+              Crawl Intelligence
+            </h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3 mb-4">
+              <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+                <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Primary Page Type</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{report.puppeteerData?.pageType || 'unknown'}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+                <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Pages Reviewed</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{crawlData.totalPagesDiscovered || 1}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+                <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">Broken Links</p>
+                <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{report.puppeteerData?.brokenLinks?.length || 0}</p>
+              </div>
+            </div>
+            {crawlData.roleCounts && Object.keys(crawlData.roleCounts).length > 0 && (
+              <div className="mb-4 rounded-xl border border-slate-200 dark:border-dark-border bg-white dark:bg-dark-surface p-4">
+                <p className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+                  Page Roles
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(crawlData.roleCounts)
+                    .filter(([, count]) => count > 0)
+                    .map(([role, count]) => (
+                      <span key={role} className="inline-flex items-center rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                        {role}: {count}
+                      </span>
+                    ))}
+                </div>
+              </div>
+            )}
+            {crawlData.pages?.length > 0 && (
+              <div className="space-y-3">
+                {crawlData.pages.map((page, index) => (
+                  <div key={`${page.url}-${index}`} className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="font-medium text-slate-900 dark:text-white break-all">{page.url}</p>
+                      <span className="text-sm text-slate-500 dark:text-slate-400">
+                        {(page.pageRole || 'other')} | {page.pageType || 'unknown'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {(fieldData.available || fieldData.reason) && (
+          <div className="card mb-8">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-primary-600" />
+              Field Data
+            </h3>
+            {fieldData.available ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                {[
+                  ['LCP p75', fieldData.metrics?.largestContentfulPaint],
+                  ['INP p75', fieldData.metrics?.interactionToNextPaint],
+                  ['CLS p75', fieldData.metrics?.cumulativeLayoutShift],
+                  ['FCP p75', fieldData.metrics?.firstContentfulPaint]
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+                    <p className="text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{formatPrimitiveValue(value)}</p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-slate-600 dark:text-slate-300">{fieldData.reason}</p>
+            )}
+          </div>
+        )}
+
+        {report.lighthouseData?.profileScores && (
+          <div className="card mb-8">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-primary-600" />
+              Audit Profiles
+            </h3>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {Object.entries(report.lighthouseData.profileScores).map(([profile, profileScores]) => (
+                <div key={profile} className="rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
+                  <p className="text-lg font-semibold text-slate-900 dark:text-white capitalize">{profile}</p>
+                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                    {Object.entries(profileScores).map(([metric, value]) => (
+                      <div key={metric}>
+                        <p className="text-slate-500 dark:text-slate-400">{formatLabel(metric)}</p>
+                        <p className="font-semibold text-slate-900 dark:text-white">{value}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -464,9 +740,25 @@ export const ReportContent = ({
                   <p className="text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
                     {fix.category}
                   </p>
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getSeverityStyles(fix.severity)}`}>
+                      Severity: {fix.severity || 'Medium'}
+                    </span>
+                    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${getEffortStyles(fix.effort)}`}>
+                      Effort: {fix.effort || 'Medium'}
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                      Impact: +{fix.estimatedScoreImpact ?? 0}
+                    </span>
+                  </div>
                   <p className="text-slate-700 dark:text-slate-200 leading-7 mb-4">
                     {fix.suggestion}
                   </p>
+                  {fix.whyItMatters && (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                      Why it matters: {fix.whyItMatters}
+                    </p>
+                  )}
                   <div className="rounded-lg bg-slate-900 text-slate-100 p-4 overflow-x-auto">
                     <pre className="text-xs whitespace-pre-wrap break-words">{fix.codeExample}</pre>
                   </div>
@@ -490,15 +782,20 @@ export const ReportContent = ({
           </div>
         )}
 
-        {report.puppeteerData?.screenshotPath && (
+        {screenshotUrl && (
           <div className="card mb-8">
             <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
               <Globe className="w-5 h-5 text-primary-600" />
               Captured Snapshot
             </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 break-all">
-              Screenshot saved at: {report.puppeteerData.screenshotPath}
-            </p>
+            <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-dark-border bg-slate-100 dark:bg-dark-surface">
+              <img
+                src={screenshotUrl}
+                alt={`Captured snapshot of ${report.url}`}
+                className="h-auto w-full"
+                loading="lazy"
+              />
+            </div>
           </div>
         )}
 

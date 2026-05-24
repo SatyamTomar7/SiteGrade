@@ -1,5 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../store/authStore';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { ScanLine, Moon, Sun, LogOut, User, Menu, X, LayoutDashboard, Search } from 'lucide-react';
 import { useState, useEffect } from 'react';
@@ -8,7 +7,6 @@ export const Navbar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const [isDark, setIsDark] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (isDark) {
@@ -22,7 +20,6 @@ export const Navbar = () => {
 
   const handleLogout = () => {
     logout();
-    navigate('/');
     setIsMobileMenuOpen(false);
   };
 

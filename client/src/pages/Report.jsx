@@ -1,14 +1,21 @@
-import { useParams } from 'react-router-dom';
-import { ReportContent } from '../components/ReportContent';
+import { useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAnalysis } from '../hooks/useAnalysis';
-import { downloadReportHtml, printReport } from '../utils/reportExport';
-import { Download, Share2 } from 'lucide-react';
 import { AIAnalysisLoader } from '../components/loaders/AIAnalysisLoader';
 
 export const Report = () => {
   const { jobId } = useParams();
-  const { status, isPolling, isComplete, isFailed, progress, report } = useAnalysis(jobId);
+  const navigate = useNavigate();
+  const { status, isPolling, isStreaming, isComplete, isFailed, progress, report } = useAnalysis(jobId);
   const targetUrl = report?.url || status?.report?.url || '';
+
+  useEffect(() => {
+    const reportId = report?.id || status?.report?.id;
+
+    if (reportId) {
+      navigate(`/reports/${reportId}?jobId=${jobId}`, { replace: true });
+    }
+  }, [jobId, navigate, report?.id, status?.report?.id]);
 
   if (isFailed) {
     return (
@@ -26,29 +33,8 @@ export const Report = () => {
   }
 
   if ((isPolling && !report) || !isComplete || !report) {
-    return <AIAnalysisLoader targetUrl={targetUrl} progress={progress} />;
+    return <AIAnalysisLoader targetUrl={targetUrl} progress={progress} isStreaming={isStreaming} />;
   }
 
-  const headerActions = (
-    <div className="flex flex-wrap justify-end gap-2">
-      <button onClick={() => downloadReportHtml(report)} className="btn-secondary px-4 py-2 text-sm">
-        <Download className="w-4 h-4 mr-2" />
-        Download HTML
-      </button>
-      <button onClick={() => printReport(report)} className="btn-secondary px-4 py-2 text-sm">
-        <Share2 className="w-4 h-4 mr-2" />
-        Print / Save PDF
-      </button>
-    </div>
-  );
-
-  return (
-    <ReportContent
-      report={report}
-      heading="Latest Analysis Report"
-      backTo="/dashboard"
-      backLabel="Go to Dashboard"
-      headerActions={headerActions}
-    />
-  );
+  return <AIAnalysisLoader targetUrl={targetUrl} progress={progress} isStreaming={isStreaming} />;
 };

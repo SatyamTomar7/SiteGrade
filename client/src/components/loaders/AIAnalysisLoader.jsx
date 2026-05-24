@@ -14,7 +14,7 @@ const extractDomain = (targetUrl) => {
   }
 };
 
-export const AIAnalysisLoader = memo(({ targetUrl = '', progress = 0 }) => {
+export const AIAnalysisLoader = memo(({ targetUrl = '', progress = 0, isStreaming = false }) => {
   const domain = useMemo(() => extractDomain(targetUrl), [targetUrl]);
   const safeProgress = Math.min(Math.max(Number(progress) || 0, 0), 100);
 
@@ -22,6 +22,9 @@ export const AIAnalysisLoader = memo(({ targetUrl = '', progress = 0 }) => {
     <section className="ai-analysis-loader">
       <div className="ai-analysis-loader__card">
         <p className="ai-analysis-loader__label">Report analysis in progress</p>
+        <p className="ai-analysis-loader__label">
+          {isStreaming ? 'Live updates connected' : 'Reconnecting to progress updates'}
+        </p>
         <div className="ai-analysis-loader__percent">{Math.round(safeProgress)}%</div>
         <div className="ai-analysis-loader__track" aria-hidden="true">
           <div

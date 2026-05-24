@@ -45,6 +45,7 @@ const resolveBaseUrl = () => {
 };
 
 const baseURL = resolveBaseUrl();
+const assetBaseURL = baseURL.replace(/\/api$/, '');
 
 const api = axios.create({
   baseURL,
@@ -61,6 +62,21 @@ export const publicApi = axios.create({
   },
   withCredentials: true,
 });
+
+export const getApiBaseUrl = () => baseURL;
+
+export const buildAssetUrl = (relativePath) => {
+  if (!relativePath) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(relativePath)) {
+    return relativePath;
+  }
+
+  const normalizedPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+  return `${assetBaseURL}${normalizedPath}`;
+};
 
 let isRefreshing = false;
 let refreshSubscribers = [];

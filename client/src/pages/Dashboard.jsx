@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { analysisApi } from '../api/analysis.api';
@@ -17,6 +17,9 @@ import {
 import {
   ArrowRight,
   BarChart3,
+  Bell,
+  CalendarClock,
+  Link2,
   Copy,
   Download,
   ExternalLink,
@@ -25,6 +28,7 @@ import {
   ScanLine,
   Search,
   Share2,
+  TrendingDown,
   Trash2
 } from 'lucide-react';
 
@@ -44,6 +48,21 @@ export const Dashboard = () => {
   const [filters, setFilters] = useState(defaultFilters);
   const [selectedIds, setSelectedIds] = useState([]);
   const [shareMessage, setShareMessage] = useState('');
+  const [scheduleForm, setScheduleForm] = useState({
+    name: '',
+    url: '',
+    frequency: 'weekly',
+    slackWebhook: ''
+  });
+  const [deployHookForm, setDeployHookForm] = useState({
+    name: '',
+    url: ''
+  });
+  const [workspaceForm, setWorkspaceForm] = useState({
+    name: '',
+    description: '',
+    memberEmails: ''
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['reports', filters],
@@ -53,10 +72,36 @@ export const Dashboard = () => {
     queryKey: ['dashboard-insights'],
     queryFn: () => analysisApi.getDashboardInsights()
   });
+  const { data: schedulesData } = useQuery({
+    queryKey: ['scan-schedules'],
+    queryFn: () => analysisApi.listSchedules()
+  });
+  const { data: notificationsData } = useQuery({
+    queryKey: ['schedule-notifications'],
+    queryFn: () => analysisApi.listNotifications()
+  });
+  const { data: deployHooksData } = useQuery({
+    queryKey: ['deploy-hooks'],
+    queryFn: () => analysisApi.listDeployHooks()
+  });
+  const { data: workspacesData } = useQuery({
+    queryKey: ['workspaces'],
+    queryFn: () => analysisApi.listWorkspaces()
+  });
 
   const reports = data?.data?.reports || [];
   const pagination = data?.data?.pagination;
   const insights = insightsData?.data;
+  const schedules = schedulesData?.data || [];
+  const notifications = notificationsData?.data || [];
+  const deployHooks = deployHooksData?.data || [];
+  const workspaces = workspacesData?.data || [];
+  const selectedReports = reports.filter((report) => selectedIds.includes(report.id));
+  const canCompareSelected = selectedReports.length === 2 && selectedReports.every((report) => report.status === 'completed');
+
+  useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => reports.some((report) => report.id === id)));
+  }, [reports]);
 
   const totals = useMemo(() => {
     const completed = reports.filter((report) => report.status === 'completed');
@@ -73,9 +118,11 @@ export const Dashboard = () => {
 
   const deleteMutation = useMutation({
     mutationFn: analysisApi.deleteReport,
-    onSuccess: () => {
+    onSuccess: (_, reportId) => {
+      setSelectedIds((prev) => prev.filter((id) => id !== reportId));
       queryClient.invalidateQueries({ queryKey: ['reports'] });
       queryClient.invalidateQueries({ queryKey: ['compare-reports'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-insights'] });
     }
   });
 
@@ -91,6 +138,73 @@ export const Dashboard = () => {
   const unshareMutation = useMutation({
     mutationFn: analysisApi.unshareReport,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-insights'] });
+    }
+  });
+
+  const rerunMutation = useMutation({
+    mutationFn: analysisApi.rerunReport,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-insights'] });
+      navigate(`/reports/${response.data.reportId}?jobId=${response.data.jobId}`);
+    }
+  });
+  const createScheduleMutation = useMutation({
+    mutationFn: analysisApi.createSchedule,
+    onSuccess: () => {
+      setScheduleForm({ name: '', url: '', frequency: 'weekly', slackWebhook: '' });
+      queryClient.invalidateQueries({ queryKey: ['scan-schedules'] });
+      queryClient.invalidateQueries({ queryKey: ['schedule-notifications'] });
+    }
+  });
+  const toggleScheduleMutation = useMutation({
+    mutationFn: analysisApi.updateSchedule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scan-schedules'] });
+    }
+  });
+  const deleteScheduleMutation = useMutation({
+    mutationFn: analysisApi.deleteSchedule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scan-schedules'] });
+    }
+  });
+  const markNotificationReadMutation = useMutation({
+    mutationFn: analysisApi.markNotificationRead,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['schedule-notifications'] });
+    }
+  });
+  const createDeployHookMutation = useMutation({
+    mutationFn: analysisApi.createDeployHook,
+    onSuccess: () => {
+      setDeployHookForm({ name: '', url: '' });
+      queryClient.invalidateQueries({ queryKey: ['deploy-hooks'] });
+    }
+  });
+  const deleteDeployHookMutation = useMutation({
+    mutationFn: analysisApi.deleteDeployHook,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deploy-hooks'] });
+    }
+  });
+  const createWorkspaceMutation = useMutation({
+    mutationFn: analysisApi.createWorkspace,
+    onSuccess: () => {
+      setWorkspaceForm({
+        name: '',
+        description: '',
+        memberEmails: ''
+      });
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+    }
+  });
+  const deleteWorkspaceMutation = useMutation({
+    mutationFn: analysisApi.deleteWorkspace,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
       queryClient.invalidateQueries({ queryKey: ['reports'] });
     }
   });
@@ -143,11 +257,11 @@ export const Dashboard = () => {
             </button>
             <button
               onClick={() => {
-                if (selectedIds.length === 2) {
+                if (canCompareSelected) {
                   navigate(`/compare?left=${selectedIds[0]}&right=${selectedIds[1]}`);
                 }
               }}
-              disabled={selectedIds.length !== 2}
+              disabled={!canCompareSelected}
               className="btn-secondary w-full"
             >
               <RefreshCcw className="w-4 h-4 mr-2" />
@@ -168,6 +282,270 @@ export const Dashboard = () => {
           <div className="card">
             <p className="text-sm text-slate-500 dark:text-slate-400">Average score</p>
             <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">{totals.averageScore}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="card">
+            <div className="flex items-center gap-2 mb-4">
+              <CalendarClock className="w-5 h-5 text-primary-600" />
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Scheduled Scans</h2>
+            </div>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3 mb-4">
+              <input
+                value={scheduleForm.name}
+                onChange={(event) => setScheduleForm((prev) => ({ ...prev, name: event.target.value }))}
+                className="input-field"
+                placeholder="Weekly homepage"
+              />
+              <input
+                value={scheduleForm.url}
+                onChange={(event) => setScheduleForm((prev) => ({ ...prev, url: event.target.value }))}
+                className="input-field md:col-span-2"
+                placeholder="https://example.com"
+              />
+            </div>
+            <input
+              value={scheduleForm.slackWebhook}
+              onChange={(event) => setScheduleForm((prev) => ({ ...prev, slackWebhook: event.target.value }))}
+              className="input-field mb-4"
+              placeholder="Optional Slack webhook URL"
+            />
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <select
+                value={scheduleForm.frequency}
+                onChange={(event) => setScheduleForm((prev) => ({ ...prev, frequency: event.target.value }))}
+                className="input-field sm:max-w-xs"
+              >
+                <option value="weekly">Weekly</option>
+                <option value="daily">Daily</option>
+              </select>
+              <button
+                onClick={() => createScheduleMutation.mutate({
+                  name: scheduleForm.name || `Scheduled scan for ${scheduleForm.url}`,
+                  url: scheduleForm.url,
+                  frequency: scheduleForm.frequency,
+                  deliveryChannels: [
+                    { type: 'in_app', enabled: true },
+                    ...(scheduleForm.slackWebhook ? [{ type: 'slack', enabled: true, target: scheduleForm.slackWebhook }] : [])
+                  ]
+                })}
+                disabled={!scheduleForm.url || createScheduleMutation.isPending}
+                className="btn-primary"
+              >
+                Create Schedule
+              </button>
+            </div>
+            <div className="mt-5 space-y-3">
+              {schedules.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No recurring scans configured yet.</p>
+              ) : (
+                schedules.map((schedule) => (
+                  <div key={schedule.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-dark-border dark:bg-dark-surface">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 dark:text-white">{schedule.name}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 break-all">{schedule.url}</p>
+                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                          {schedule.frequency} • next run {new Date(schedule.nextRunAt).toLocaleString()} • {schedule.lastStatus}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => toggleScheduleMutation.mutate({
+                            scheduleId: schedule.id,
+                            active: !schedule.active
+                          })}
+                          className="btn-secondary px-4 py-2 text-sm"
+                        >
+                          {schedule.active ? 'Pause' : 'Resume'}
+                        </button>
+                        <button
+                          onClick={() => deleteScheduleMutation.mutate(schedule.id)}
+                          className="inline-flex items-center justify-center rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="flex items-center gap-2 mb-4">
+              <Bell className="w-5 h-5 text-primary-600" />
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Alerts</h2>
+            </div>
+            <div className="space-y-3">
+              {notifications.length === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No schedule alerts yet.</p>
+              ) : (
+                notifications.map((notification) => (
+                  <button
+                    key={notification.id}
+                    onClick={() => {
+                      if (!notification.read) {
+                        markNotificationReadMutation.mutate(notification.id);
+                      }
+                    }}
+                    className={`w-full rounded-xl border p-4 text-left ${
+                      notification.read
+                        ? 'border-slate-200 bg-slate-50 dark:border-dark-border dark:bg-dark-surface'
+                        : 'border-primary-200 bg-primary-50/60 dark:border-primary-800 dark:bg-primary-900/10'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-slate-900 dark:text-white">{notification.title}</p>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{new Date(notification.createdAt).toLocaleString()}</span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{notification.message}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <Link2 className="w-5 h-5 text-primary-600" />
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Deploy Hooks</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3 mb-4">
+            <input
+              value={deployHookForm.name}
+              onChange={(event) => setDeployHookForm((prev) => ({ ...prev, name: event.target.value }))}
+              className="input-field"
+              placeholder="Production deploy hook"
+            />
+            <input
+              value={deployHookForm.url}
+              onChange={(event) => setDeployHookForm((prev) => ({ ...prev, url: event.target.value }))}
+              className="input-field md:col-span-2"
+              placeholder="https://example.com"
+            />
+          </div>
+          <button
+            onClick={() => createDeployHookMutation.mutate({
+              name: deployHookForm.name || `Deploy hook for ${deployHookForm.url}`,
+              url: deployHookForm.url,
+              analysisConfig: {
+                scanMode: 'single',
+                crawlMaxPages: 1,
+                auditProfiles: ['mobile', 'desktop'],
+                enableFixMode: true
+              }
+            })}
+            disabled={!deployHookForm.url || createDeployHookMutation.isPending}
+            className="btn-primary"
+          >
+            Create Deploy Hook
+          </button>
+          <div className="mt-5 space-y-3">
+            {deployHooks.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No deploy hooks configured yet.</p>
+            ) : (
+              deployHooks.map((hook) => (
+                <div key={hook.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-dark-border dark:bg-dark-surface">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 dark:text-white">{hook.name}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 break-all">{hook.url}</p>
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 break-all">{hook.webhookUrl}</p>
+                      <pre className="mt-3 whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-3 text-xs text-slate-100">{`# GitHub Actions
+curl -X POST "${hook.webhookUrl}" -H "Content-Type: application/json" -d "{\\"deployment\\":\\"production\\"}"
+
+# Vercel / Netlify build hook follow-up
+fetch("${hook.webhookUrl}", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deployment: "production" }) });`}</pre>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(hook.webhookUrl);
+                          setShareMessage(`Copied deploy hook for ${hook.name}`);
+                        }}
+                        className="btn-secondary px-4 py-2 text-sm"
+                      >
+                        Copy Hook URL
+                      </button>
+                      <button
+                        onClick={() => deleteDeployHookMutation.mutate(hook.id)}
+                        className="inline-flex items-center justify-center rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 className="w-5 h-5 text-primary-600" />
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Workspaces</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 mb-4">
+            <input
+              value={workspaceForm.name}
+              onChange={(event) => setWorkspaceForm((prev) => ({ ...prev, name: event.target.value }))}
+              className="input-field"
+              placeholder="Frontend Team"
+            />
+            <input
+              value={workspaceForm.description}
+              onChange={(event) => setWorkspaceForm((prev) => ({ ...prev, description: event.target.value }))}
+              className="input-field"
+              placeholder="Shared audits for the web team"
+            />
+            <textarea
+              value={workspaceForm.memberEmails}
+              onChange={(event) => setWorkspaceForm((prev) => ({ ...prev, memberEmails: event.target.value }))}
+              rows={3}
+              className="input-field md:col-span-2"
+              placeholder={'designer@example.com\npm@example.com'}
+            />
+          </div>
+          <button
+            onClick={() => createWorkspaceMutation.mutate({
+              name: workspaceForm.name,
+              description: workspaceForm.description,
+              memberEmails: workspaceForm.memberEmails.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean)
+            })}
+            disabled={!workspaceForm.name.trim() || createWorkspaceMutation.isPending}
+            className="btn-primary"
+          >
+            Create Workspace
+          </button>
+          <div className="mt-5 space-y-3">
+            {workspaces.length === 0 ? (
+              <p className="text-sm text-slate-500 dark:text-slate-400">No workspaces yet.</p>
+            ) : (
+              workspaces.map((workspace) => (
+                <div key={workspace.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-dark-border dark:bg-dark-surface">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="font-semibold text-slate-900 dark:text-white">{workspace.name}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{workspace.description || 'No description'}</p>
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Members: {workspace.memberEmails?.length ? workspace.memberEmails.join(', ') : 'None added'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => deleteWorkspaceMutation.mutate(workspace.id)}
+                      className="inline-flex items-center justify-center rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -244,6 +622,29 @@ export const Dashboard = () => {
           </div>
         )}
 
+        {insights?.recentRegressions?.length > 0 && (
+          <div className="card">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Recent Regressions</h2>
+            <div className="space-y-3">
+              {insights.recentRegressions.map((item) => (
+                <button
+                  key={`${item.reportId}-${item.baselineReportId}`}
+                  onClick={() => navigate(`/compare?left=${item.baselineReportId}&right=${item.reportId}`)}
+                  className="flex w-full items-start justify-between gap-4 rounded-xl border border-rose-200 bg-rose-50/70 p-4 text-left transition hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-900/10"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-900 dark:text-white break-all">{item.url}</p>
+                    <p className="mt-1 text-sm text-rose-700 dark:text-rose-300">
+                      Score delta {item.overallScoreDelta} across {item.regressionCount} regressed metrics
+                    </p>
+                  </div>
+                  <TrendingDown className="mt-1 h-4 w-4 shrink-0 text-rose-500" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="card">
           <div className="flex items-center gap-2 mb-4">
             <Filter className="w-4 h-4 text-primary-600" />
@@ -312,6 +713,12 @@ export const Dashboard = () => {
           </div>
         )}
 
+        {selectedIds.length > 0 && !canCompareSelected && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+            Select exactly two completed reports to use the compare feature.
+          </div>
+        )}
+
         <div className="space-y-4">
           {isLoading ? (
             <div className="card text-center py-12">
@@ -347,6 +754,11 @@ export const Dashboard = () => {
                             Public link enabled
                           </span>
                         )}
+                        {report.workspaceContext?.workspaceName && (
+                          <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                            {report.workspaceContext.workspaceName}
+                          </span>
+                        )}
                       </div>
                       <h3 className="text-lg font-semibold text-slate-900 dark:text-white break-all">{report.url}</h3>
                       <div className="mt-3 grid grid-cols-1 gap-3 text-sm text-slate-500 dark:text-slate-400 min-[420px]:grid-cols-2 md:grid-cols-4">
@@ -374,6 +786,13 @@ export const Dashboard = () => {
                     <button onClick={() => navigate(`/reports/${report.id}`)} className="btn-secondary w-full px-4 py-2 text-sm">
                       <ExternalLink className="w-4 h-4 mr-2" />
                       Open
+                    </button>
+                    <button
+                      onClick={() => rerunMutation.mutate(report.id)}
+                      className="btn-secondary w-full px-4 py-2 text-sm"
+                    >
+                      <RefreshCcw className="w-4 h-4 mr-2" />
+                      Re-run
                     </button>
                     <button
                       onClick={async () => {
