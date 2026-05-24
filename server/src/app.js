@@ -30,7 +30,10 @@ const isEnabled = (value, defaultValue = false) => {
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const runAnalysisWorkerInApi = isEnabled(process.env.RUN_ANALYSIS_WORKER_IN_API, false);
+const runAnalysisWorkerInApi = isEnabled(
+  process.env.RUN_ANALYSIS_WORKER_IN_API,
+  process.env.NODE_ENV === 'production'
+);
 const runScheduleWorkerInApi = isEnabled(process.env.RUN_SCHEDULE_WORKER_IN_API, true);
 const allowedOrigins = [
   'http://localhost:5173',
@@ -131,6 +134,13 @@ process.on('unhandledRejection', (err) => {
 
 const startServer = async () => {
   try {
+    logger.info('Boot configuration resolved', {
+      nodeEnv: process.env.NODE_ENV || 'development',
+      runAnalysisWorkerInApi,
+      runScheduleWorkerInApi,
+      isRedisConfigured
+    });
+
     await connectDB();
     const redisConnection = await connectRedis();
 
