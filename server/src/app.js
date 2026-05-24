@@ -35,6 +35,8 @@ const runScheduleWorkerInApi = isEnabled(process.env.RUN_SCHEDULE_WORKER_IN_API,
 const allowedOrigins = [
   'http://localhost:5173',
   'https://site-grade.vercel.app',
+  'https://sitegrade.tech',
+  'https://www.sitegrade.tech',
   'https://sitegrade.onrender.com',
   'https://sitegrade-frontend.onrender.com',
   process.env.CLIENT_URL,
