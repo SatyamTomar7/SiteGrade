@@ -236,8 +236,9 @@ export const createReport = async (userId, url, analysisConfig = {}) => {
   return report;
 };
 
-export const getJobStatus = async (jobId, userId) => {
+export const getJobStatus = async (jobId, actor) => {
   const job = await analysisQueue.getJob(jobId);
+  const { userId } = getActorIdentity(actor);
   
   if (!job) {
     const error = new Error('Job not found');
@@ -259,9 +260,12 @@ export const getJobStatus = async (jobId, userId) => {
     }
 
     if (report.userId.toString() !== userId.toString()) {
-      const error = new Error('Not authorized to access this report');
-      error.statusCode = 403;
-      throw error;
+      const hasWorkspaceAccess = await canAccessWorkspaceReport(report, actor);
+      if (!hasWorkspaceAccess) {
+        const error = new Error('Not authorized to access this report');
+        error.statusCode = 403;
+        throw error;
+      }
     }
   }
   
@@ -327,8 +331,9 @@ export const updateReportTask = async (reportId, taskId, userId, updates) => {
   return normalizeReport(report.toObject());
 };
 
-export const getReportRegression = async (reportId, userId) => {
-  const currentReport = await ensureOwnedReport(reportId, userId);
+export const getReportRegression = async (reportId, actor) => {
+  const { userId } = getActorIdentity(actor);
+  const currentReport = await ensureOwnedReport(reportId, actor);
 
   if (currentReport.status !== 'completed') {
     const error = new Error('Only completed reports can be used for regression analysis');
