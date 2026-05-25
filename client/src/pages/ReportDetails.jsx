@@ -54,6 +54,8 @@ export const ReportDetails = () => {
   const savedReport = data?.data;
   const isReportPending = savedReport && ['pending', 'processing'].includes(savedReport.status);
   const isLiveReportPending = liveReport && ['pending', 'processing'].includes(liveReport.status);
+  const hasCompletedLiveReport = liveReport?.status === 'completed';
+  const hasFailedLiveReport = liveReport?.status === 'failed';
   const regressionEnabled = !!reportId && (
     savedReport?.status === 'completed' || liveReport?.status === 'completed'
   );
@@ -106,7 +108,7 @@ export const ReportDetails = () => {
   });
 
   const regression = regressionData?.data;
-  const report = liveReport?.status === 'completed' ? liveReport : savedReport;
+  const report = hasCompletedLiveReport ? liveReport : savedReport;
   const targetUrl = report?.url || savedReport?.url || liveStatus?.report?.url || '';
   const collaboration = report?.collaboration || {};
   const workspaces = workspacesData?.data || [];
@@ -114,6 +116,26 @@ export const ReportDetails = () => {
   useEffect(() => {
     setSelectedWorkspaceId(report?.workspaceContext?.workspaceId || '');
   }, [report?.workspaceContext?.workspaceId]);
+
+  useEffect(() => {
+    if (!jobId || !reportId) {
+      return;
+    }
+
+    if (hasCompletedLiveReport || hasFailedLiveReport || isComplete || isFailed) {
+      queryClient.invalidateQueries({ queryKey: ['report', reportId] });
+      queryClient.invalidateQueries({ queryKey: ['reports'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-insights'] });
+    }
+  }, [
+    hasCompletedLiveReport,
+    hasFailedLiveReport,
+    isComplete,
+    isFailed,
+    jobId,
+    queryClient,
+    reportId
+  ]);
 
   if (jobId && isFailed) {
     return (
@@ -130,7 +152,12 @@ export const ReportDetails = () => {
     );
   }
 
-  if (jobId && (!savedReport || isReportPending || isLiveReportPending || (!isComplete && !liveReport?.status))) {
+  if (
+    jobId &&
+    !hasCompletedLiveReport &&
+    !hasFailedLiveReport &&
+    (!savedReport || isReportPending || isLiveReportPending || (!isComplete && !liveReport?.status))
+  ) {
     return <AIAnalysisLoader targetUrl={targetUrl} progress={progress} isStreaming={isStreaming} />;
   }
 
