@@ -822,7 +822,7 @@ export const updateReportWithResults = async (reportId, data) => {
       aiReviewStructured: data.aiReviewStructured,
       completedAt: new Date()
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (report?.userId) {
@@ -833,7 +833,11 @@ export const updateReportWithResults = async (reportId, data) => {
 };
 
 export const markReportProcessing = async (reportId) => {
-  const report = await WebsiteReport.findByIdAndUpdate(reportId, { status: 'processing' }, { new: true });
+  const report = await WebsiteReport.findByIdAndUpdate(
+    reportId,
+    { status: 'processing' },
+    { returnDocument: 'after' }
+  );
   if (report?.userId) {
     await invalidateUserAnalysisCache(report.userId);
   }
@@ -848,7 +852,7 @@ export const markReportFailed = async (reportId, errorMessage) => {
       errorMessage,
       failedAt: new Date()
     },
-    { new: true }
+    { returnDocument: 'after' }
   );
 
   if (report?.userId) {

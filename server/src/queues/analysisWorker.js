@@ -350,7 +350,13 @@ const processAnalysis = async (job) => {
 
     return report;
   } catch (error) {
-    logger.error(`[Job ${job.id}] Analysis failed:`, error);
+    logger.error(`[Job ${job.id}] Analysis failed`, {
+      reportId,
+      url,
+      auditProfiles,
+      message: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 };
@@ -450,7 +456,12 @@ export const startAnalysisWorker = () => {
   });
 
   workerInstance.on('failed', async (job, err) => {
-    logger.error(`[Job ${job?.id}] Failed:`, err.message);
+    logger.error(`[Job ${job?.id}] Failed`, {
+      reportId: job?.data?.reportId,
+      url: job?.data?.url,
+      message: err.message,
+      stack: err.stack
+    });
     
     if (job?.data?.reportId) {
       try {

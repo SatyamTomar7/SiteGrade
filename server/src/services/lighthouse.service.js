@@ -1,7 +1,7 @@
 import lighthouse from 'lighthouse';
 import * as chromeLauncher from 'chrome-launcher';
 import { logger } from '../config/logger.js';
-import { getChromeExecutablePath } from '../utils/browser.js';
+import { getBrowserLaunchArgs, getChromeExecutablePath } from '../utils/browser.js';
 
 const PERFORMANCE_OPPORTUNITY_AUDITS = [
   'render-blocking-resources',
@@ -147,18 +147,25 @@ const buildAccessibilityIssueDetails = (audits = {}) => (
 
 export const analyzeWithLighthouse = async (url, options = {}) => {
   const profile = options.profile === 'desktop' ? 'desktop' : 'mobile';
-  const chrome = await chromeLauncher.launch({
-    chromePath: getChromeExecutablePath(),
-    chromeFlags: [
-      '--headless',
-      '--disable-gpu',
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas'
-    ]
-  });
+  let chrome;
 
   try {
+    const chromePath = await getChromeExecutablePath();
+    const chromeFlags = ['--headless', ...getBrowserLaunchArgs()];
+
+    logger.info('Launching Chrome for Lighthouse audit', {
+      url,
+      profile,
+      chromePath,
+      platform: process.platform
+    });
+
+    chrome = await chromeLauncher.launch({
+      chromePath,
+      chromeFlags,
+      logLevel: 'error'
+    });
+
     const profileConfig = getProfileConfig(profile);
     const runnerResult = await lighthouse(url, {
       logLevel: 'error',
@@ -169,6 +176,12 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
       screenEmulation: profileConfig.screenEmulation,
       formFactor: profileConfig.formFactor
     });
+
+    if (!runnerResult?.lhr) {
+      const error = new Error('Lighthouse did not return a valid LHR payload');
+      error.code = 'LIGHTHOUSE_EMPTY_RESULT';
+      throw error;
+    }
 
     const lhr = runnerResult.lhr;
     const audits = lhr.audits;
@@ -243,7 +256,11 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
     const opportunityMap = buildOpportunityMap(audits);
     const accessibilityIssueDetails = buildAccessibilityIssueDetails(audits);
 
-    logger.info(`Lighthouse ${profile} audit complete - Performance: ${scores.performance}, SEO: ${scores.seo}, A11y: ${scores.accessibility}, BP: ${scores.bestPractices}`);
+    logger.info(`Lighthouse ${profile} audit complete - Performance: ${scores.performance}, SEO: ${scores.seo}, A11y: ${scores.accessibility}, BP: ${scores.bestPractices}`, {
+      url,
+      finalUrl: lhr.finalUrl,
+      warnings: lhr.runWarnings?.length || 0
+    });
 
     return {
       profile,
@@ -264,9 +281,25 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
       }
     };
   } catch (error) {
-    logger.error(`Lighthouse ${profile} audit error:`, error);
+    logger.error(`Lighthouse ${profile} audit error`, {
+      url,
+      profile,
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    });
     throw error;
   } finally {
-    await chrome.kill();
+    if (chrome) {
+      try {
+        await chrome.kill();
+      } catch (error) {
+        logger.warn('Failed to terminate Lighthouse Chrome process cleanly', {
+          url,
+          profile,
+          message: error.message
+        });
+      }
+    }
   }
 };
