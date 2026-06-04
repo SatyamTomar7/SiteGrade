@@ -33,6 +33,10 @@ services:
         sync: false
       - key: SCREENSHOTS_DIR
         value: ./screenshots
+      - key: RUN_ANALYSIS_WORKER_IN_API
+        value: true
+      - key: RUN_SCHEDULE_WORKER_IN_API
+        value: true
 
   - type: static
     name: sitegrade-frontend
