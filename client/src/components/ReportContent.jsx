@@ -173,12 +173,12 @@ export const ReportContent = ({
     : '';
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-dark-bg py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
+    <div className="page-shell">
+      <div className="page-container">
         {banner}
-        <div className="mb-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
+        <div className="mb-8 rounded-[1.75rem] border border-slate-200/80 bg-white/90 p-6 shadow-sm backdrop-blur dark:border-dark-border dark:bg-dark-surface/90 sm:p-8">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+            <div className="max-w-4xl">
               <button
                 onClick={() => navigate(backTo)}
                 className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors mb-6"
@@ -187,17 +187,17 @@ export const ReportContent = ({
                 {backLabel}
               </button>
 
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white mb-2">
+              <h1 className="section-title text-3xl sm:text-4xl mb-3">
                 {heading}
               </h1>
-              <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+              <div className="flex flex-wrap items-center gap-2 text-slate-600 dark:text-slate-400">
                 <ScanLine className="w-4 h-4" />
                 <span className="font-mono text-sm break-all">{report.url}</span>
               </div>
             </div>
 
-            <div className="flex w-full sm:w-auto flex-col items-stretch gap-3 sm:items-end">
-              <div className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold ${
+            <div className="flex w-full xl:max-w-sm flex-col items-stretch gap-3 xl:items-end">
+              <div className={`flex items-center justify-center gap-2 rounded-2xl px-4 py-3 font-semibold ${
                 overallScore >= 90
                   ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
                   : overallScore >= 70
@@ -205,7 +205,7 @@ export const ReportContent = ({
                   : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300'
               }`}>
                 {overallScore >= 90 ? <CheckCircle2 className="w-5 h-5" /> : overallScore >= 70 ? <AlertCircle className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
-                Overall: {overallScore}/100
+                Overall score: {overallScore}/100
               </div>
               {headerActions}
             </div>

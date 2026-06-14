@@ -164,8 +164,8 @@ export const CompareReports = () => {
   }, [leftScreenshot, rightScreenshot, visualMode]);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-dark-bg py-10 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-6xl mx-auto space-y-8">
+    <div className="page-shell">
+      <div className="mx-auto max-w-6xl space-y-8">
         <button
           onClick={() => navigate('/dashboard')}
           className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -175,8 +175,12 @@ export const CompareReports = () => {
         </button>
 
         <div className="card">
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">Before vs After Comparison</h1>
-          <p className="mt-2 text-slate-600 dark:text-slate-400">
+          <div className="section-kicker mb-4">
+            <ArrowLeftRight className="h-4 w-4" />
+            Comparison view
+          </div>
+          <h1 className="section-title text-3xl sm:text-4xl">Before vs After Comparison</h1>
+          <p className="section-copy mt-2">
             Compare score deltas, grade movement, tech stack changes, and console quality between two analyses.
           </p>
           {comparison.summary && (
