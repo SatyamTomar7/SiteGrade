@@ -5,6 +5,31 @@ const { Pool } = pg;
 
 let pool;
 
+const isEnabled = (value) => ['1', 'true', 'yes', 'on', 'require'].includes(String(value).trim().toLowerCase());
+
+const shouldUseSsl = (connectionString) => {
+  if (process.env.DATABASE_SSL !== undefined) {
+    return isEnabled(process.env.DATABASE_SSL);
+  }
+
+  if (process.env.PGSSLMODE !== undefined) {
+    return isEnabled(process.env.PGSSLMODE);
+  }
+
+  try {
+    const url = new URL(connectionString);
+    const host = (url.hostname || '').toLowerCase();
+
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return process.env.NODE_ENV === 'production';
+  }
+};
+
 const bootstrapStatements = [
   `
     CREATE TABLE IF NOT EXISTS users (
@@ -134,14 +159,14 @@ export const getPool = () => {
       throw new Error('DATABASE_URL is required');
     }
 
+    const useSsl = shouldUseSsl(connectionString);
+
     pool = new Pool({
       connectionString,
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 30000,
-      ssl: process.env.NODE_ENV === 'production'
-        ? { rejectUnauthorized: false }
-        : undefined
+      ssl: useSsl ? { rejectUnauthorized: false } : undefined
     });
   }
 
