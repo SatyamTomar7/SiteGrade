@@ -115,21 +115,82 @@ const clearClientSession = () => {
   queryClient.clear();
 };
 
-// Attach the access token when it is still valid. If the token has already
-// expired, let the request fail once and rely on the refresh flow below instead
-// of repeatedly sending known-bad credentials to the backend.
+const redirectToLoginIfNeeded = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const isAlreadyOnPublicShare = window.location.pathname.startsWith('/shared/');
+  if (!isAlreadyOnPublicShare && !hasForcedRedirect) {
+    hasForcedRedirect = true;
+    window.location.href = '/login';
+  }
+};
+
+const refreshAccessToken = async () => {
+  if (isRefreshing) {
+    return new Promise((resolve, reject) => {
+      addRefreshSubscriber(resolve, reject);
+    });
+  }
+
+  isRefreshing = true;
+
+  try {
+    const response = await axios.post(
+      `${baseURL}/auth/refresh`,
+      {},
+      { withCredentials: true }
+    );
+
+    const { accessToken } = response.data.data;
+    useAuthStore.getState().setToken(accessToken);
+    hasForcedRedirect = false;
+
+    onRefreshed(accessToken);
+    return accessToken;
+  } catch (refreshError) {
+    onRefreshFailed(refreshError);
+    clearClientSession();
+    redirectToLoginIfNeeded();
+    throw refreshError;
+  } finally {
+    isRefreshing = false;
+  }
+};
+
+// Attach a valid access token to protected requests. If the stored token is
+// missing or expired, refresh it before sending the request when possible.
 api.interceptors.request.use(
-  (config) => {
-    const token = useAuthStore.getState().token;
+  async (config) => {
+    const { token, isAuthenticated } = useAuthStore.getState();
     const requestUrl = config.url || '';
     const isRefreshRequest = requestUrl.includes('/auth/refresh');
+    const isAuthRequest = requestUrl.includes('/auth/login')
+      || requestUrl.includes('/auth/register')
+      || requestUrl.includes('/auth/verify-email')
+      || requestUrl.includes('/auth/resend-verification')
+      || requestUrl.includes('/auth/forgot-password')
+      || requestUrl.includes('/auth/verify-reset-otp')
+      || requestUrl.includes('/auth/reset-password');
+    const isPublicSharedRoute = requestUrl.includes('/analysis/shared/');
 
-    if (token && !isRefreshRequest) {
-      if (isTokenExpired(token)) {
-        delete config.headers.Authorization;
-      } else {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    if (isRefreshRequest || isAuthRequest || isPublicSharedRoute) {
+      return config;
+    }
+
+    config.headers = config.headers || {};
+
+    if (token && !isTokenExpired(token)) {
+      config.headers.Authorization = `Bearer ${token}`;
+      return config;
+    }
+
+    delete config.headers.Authorization;
+
+    if (isAuthenticated) {
+      const freshToken = await refreshAccessToken();
+      config.headers.Authorization = `Bearer ${freshToken}`;
     }
 
     return config;
@@ -166,35 +227,12 @@ api.interceptors.response.use(
       }
 
       originalRequest._retry = true;
-      isRefreshing = true;
 
       try {
-        const response = await axios.post(
-          `${baseURL}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-
-        const { accessToken } = response.data.data;
-        useAuthStore.getState().setToken(accessToken);
-        hasForcedRedirect = false;
-
-        onRefreshed(accessToken);
-        isRefreshing = false;
-
+        const accessToken = await refreshAccessToken();
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        isRefreshing = false;
-        onRefreshFailed(refreshError);
-        clearClientSession();
-
-        const isAlreadyOnPublicShare = window.location.pathname.startsWith('/shared/');
-        if (!isAlreadyOnPublicShare && !hasForcedRedirect) {
-          hasForcedRedirect = true;
-          window.location.href = '/login';
-        }
-
         return Promise.reject(refreshError);
       }
     }

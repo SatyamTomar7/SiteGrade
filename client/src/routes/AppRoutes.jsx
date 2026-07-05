@@ -9,6 +9,8 @@ const Report = lazy(() => import('../pages/Report').then((module) => ({ default:
 const ReportDetails = lazy(() => import('../pages/ReportDetails').then((module) => ({ default: module.ReportDetails })));
 const Login = lazy(() => import('../pages/Login').then((module) => ({ default: module.Login })));
 const Register = lazy(() => import('../pages/Register').then((module) => ({ default: module.Register })));
+const VerifyEmail = lazy(() => import('../pages/VerifyEmail').then((module) => ({ default: module.VerifyEmail })));
+const ForgotPassword = lazy(() => import('../pages/ForgotPassword').then((module) => ({ default: module.ForgotPassword })));
 const Dashboard = lazy(() => import('../pages/Dashboard').then((module) => ({ default: module.Dashboard })));
 const CompareReports = lazy(() => import('../pages/CompareReports').then((module) => ({ default: module.CompareReports })));
 const SharedReport = lazy(() => import('../pages/SharedReport').then((module) => ({ default: module.SharedReport })));
@@ -29,6 +31,8 @@ export const AppRoutes = () => {
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/shared/:shareToken" element={<SharedReport />} />
         <Route
           path="/dashboard"

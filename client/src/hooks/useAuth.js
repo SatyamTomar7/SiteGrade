@@ -11,11 +11,15 @@ export const useAuth = () => {
     user: storedUser,
     isAuthenticated,
     isLoading,
+    authChecked,
+    hasHydrated,
     error,
+    errorCode,
     login,
     logout,
     setUser,
     setLoading,
+    setAuthChecked,
     setError,
     clearError
   } = useAuthStore();
@@ -30,14 +34,28 @@ export const useAuth = () => {
   useEffect(() => {
     if (userData?.data) {
       setUser(userData.data);
+      setAuthChecked(true);
     }
-  }, [setUser, userData]);
+  }, [setAuthChecked, setUser, userData]);
 
   useEffect(() => {
-    if (userError) {
+    const statusCode = userError?.response?.status;
+
+    if (statusCode === 401 || statusCode === 403) {
       logout();
+      return;
     }
-  }, [logout, userError]);
+
+    if (userError) {
+      setAuthChecked(true);
+    }
+  }, [logout, setAuthChecked, userError]);
+
+  useEffect(() => {
+    if (hasHydrated && !isAuthenticated) {
+      setAuthChecked(true);
+    }
+  }, [hasHydrated, isAuthenticated, setAuthChecked]);
 
   const registerMutation = useMutation({
     mutationFn: authApi.register,
@@ -46,12 +64,13 @@ export const useAuth = () => {
       clearError();
     },
     onSuccess: (data) => {
-      const { user, accessToken } = data.data;
-      login(user, accessToken);
       setLoading(false);
     },
     onError: (error) => {
-      setError(error.response?.data?.message || 'Registration failed');
+      setError(
+        error.response?.data?.message || 'Registration failed',
+        error.response?.data?.code || null
+      );
       setLoading(false);
     }
   });
@@ -68,7 +87,10 @@ export const useAuth = () => {
       setLoading(false);
     },
     onError: (error) => {
-      setError(error.response?.data?.message || 'Login failed');
+      setError(
+        error.response?.data?.message || 'Login failed',
+        error.response?.data?.code || null
+      );
       setLoading(false);
     }
   });
@@ -91,7 +113,10 @@ export const useAuth = () => {
     user: userData?.data || storedUser,
     isAuthenticated,
     isLoading,
+    authChecked,
+    hasHydrated,
     error,
+    errorCode,
     register: registerMutation.mutate,
     login: loginMutation.mutate,
     logout: logoutMutation.mutate,

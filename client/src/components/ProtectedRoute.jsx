@@ -3,10 +3,10 @@ import { useAuthStore } from '../store/authStore';
 import { LoadingSpinner } from './LoadingSpinner';
 
 export const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuthStore();
+  const { isAuthenticated, isLoading, authChecked, hasHydrated } = useAuthStore();
   const location = useLocation();
 
-  if (isLoading) {
+  if (!hasHydrated || isLoading || (isAuthenticated && !authChecked)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner size="lg" />

@@ -3,23 +3,30 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { loginSchema } from '../utils/validators';
-import { ScanLine, Mail, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
+import { ScanLine, Mail, Lock, AlertCircle } from 'lucide-react';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { AuthShell } from '../components/AuthShell';
 
 export const Login = () => {
-  const { login, isLoading, error, clearError } = useAuth();
+  const { login, isLoading, error, errorCode, clearError } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const redirectUrl = location.state?.redirectUrl || '/';
   const prefillUrl = location.state?.url;
+  const resetSuccess = location.state?.resetSuccess;
 
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors }
   } = useForm({
-    resolver: zodResolver(loginSchema)
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: location.state?.email || ''
+    }
   });
+  const watchedEmail = watch('email');
 
   const onSubmit = (data) => {
     clearError();
@@ -35,50 +42,26 @@ export const Login = () => {
   };
 
   return (
-    <div className="page-shell flex items-center justify-center">
-      <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="card hidden lg:flex lg:flex-col lg:justify-between lg:bg-slate-950 lg:text-white">
-          <div>
-            <div className="section-kicker mb-6 border-white/10 bg-white/10 text-primary-100 dark:bg-white/10">
-              <ScanLine className="h-4 w-4" />
-              Sign in
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight">Pick up right where your last audit left off.</h1>
-            <p className="mt-5 text-sm leading-7 text-slate-300">
-              Review saved reports, compare runs, share results, and keep your website fixes moving without losing context.
-            </p>
-          </div>
-          <div className="grid gap-3">
-            {[
-              'Revisit analysis history and exported reports',
-              'Compare two completed runs to spot regressions',
-              'Manage recurring scans, alerts, and team follow-up'
-            ].map((item) => (
-              <div key={item} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card mx-auto w-full max-w-md space-y-6 sm:space-y-8 lg:max-w-none">
-          <div className="text-center">
-            <Link to="/" className="inline-flex items-center gap-2 mb-8 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
-              <ArrowLeft className="w-4 h-4" />
-              Back to home
-            </Link>
-            <div className="flex justify-center mb-4">
-              <ScanLine className="w-12 h-12 text-primary-600 dark:text-primary-400" />
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
-              Welcome back
-            </h2>
-            <p className="mt-2 text-slate-600 dark:text-slate-400">
-              Sign in to your SiteGrade account
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-6">
+    <AuthShell
+      backTo="/"
+      backLabel="Back to home"
+      badge={
+        <>
+          <ScanLine className="h-4 w-4" />
+          Sign in
+        </>
+      }
+      title="Welcome back"
+      description="Sign in to review saved audits, compare changes, and keep website fixes moving."
+      asideTitle="Pick up right where your last audit left off."
+      asideDescription="Everything stays in one place so you can open reports quickly, understand what changed, and move straight into action."
+      asidePoints={[
+        'Revisit saved reports and exports without hunting through older runs.',
+        'Spot regressions faster by comparing two completed scans side by side.',
+        'Manage recurring scans, team follow-up, and shared results from one dashboard.'
+      ]}
+    >
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -92,10 +75,14 @@ export const Login = () => {
                     className="input-field pl-11"
                     placeholder="you@example.com"
                     disabled={isLoading}
+                    autoComplete="email"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    spellCheck="false"
                   />
                 </div>
                 {errors.email && (
-                  <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                  <p className="mt-1 flex items-center gap-1 text-sm text-red-500" role="alert">
                     <AlertCircle className="w-3 h-3" />
                     {errors.email.message}
                   </p>
@@ -114,10 +101,11 @@ export const Login = () => {
                     className="input-field pl-11"
                     placeholder="********"
                     disabled={isLoading}
+                    autoComplete="current-password"
                   />
                 </div>
                 {errors.password && (
-                  <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                  <p className="mt-1 flex items-center gap-1 text-sm text-red-500" role="alert">
                     <AlertCircle className="w-3 h-3" />
                     {errors.password.message}
                   </p>
@@ -125,12 +113,27 @@ export const Login = () => {
               </div>
             </div>
 
+            {resetSuccess && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
+                {resetSuccess}
+              </div>
+            )}
+
             {error && (
-              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400" role="alert">
                 <AlertCircle className="w-4 h-4" />
                 {error}
               </div>
             )}
+
+            <div className="flex items-center justify-end">
+              <Link
+                to={`/forgot-password${watchedEmail ? `?email=${encodeURIComponent(watchedEmail)}` : ''}`}
+                className="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400"
+              >
+                Forgot password?
+              </Link>
+            </div>
 
             <button
               type="submit"
@@ -154,10 +157,21 @@ export const Login = () => {
                 Get started
               </Link>
             </p>
-          </form>
-        </div>
-      </div>
-    </div>
+
+            {errorCode === 'EMAIL_NOT_VERIFIED' && watchedEmail && (
+              <p className="text-center text-sm text-slate-600 dark:text-slate-400">
+                Need to finish verification?{' '}
+                <Link
+                  to={`/verify-email?email=${encodeURIComponent(watchedEmail)}&redirect=${encodeURIComponent(redirectUrl)}${prefillUrl ? `&url=${encodeURIComponent(prefillUrl)}` : ''}`}
+                  state={{ email: watchedEmail, redirectUrl, url: prefillUrl }}
+                  className="font-medium text-primary-600 hover:underline dark:text-primary-400"
+                >
+                  Enter your email code
+                </Link>
+              </p>
+            )}
+      </form>
+    </AuthShell>
   );
 };
 

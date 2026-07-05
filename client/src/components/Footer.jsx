@@ -19,6 +19,18 @@ export const Footer = () => {
             <p className="max-w-xl text-sm leading-7 text-slate-600 dark:text-slate-300">
               Review performance, SEO, accessibility, and implementation quality in one place, then turn findings into fixes your team can actually ship.
             </p>
+            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                ['Clear reports', 'Readable summaries and quick priorities.'],
+                ['Built for teams', 'Compare runs, share results, and plan follow-up.'],
+                ['Responsive UI', 'Comfortable to review on phones and laptops.']
+              ].map(([title, copy]) => (
+                <div key={title} className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm dark:border-dark-border dark:bg-dark-bg/60">
+                  <p className="font-semibold text-slate-900 dark:text-white">{title}</p>
+                  <p className="mt-1 text-slate-600 dark:text-slate-300">{copy}</p>
+                </div>
+              ))}
+            </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link to="/analysis" className="btn-primary">
                 Start an audit

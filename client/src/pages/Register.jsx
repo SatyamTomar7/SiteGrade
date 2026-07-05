@@ -3,8 +3,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { registerSchema } from '../utils/validators';
-import { ScanLine, User, Mail, Lock, AlertCircle, ArrowLeft } from 'lucide-react';
+import { ScanLine, User, Mail, Lock, AlertCircle } from 'lucide-react';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { AuthShell } from '../components/AuthShell';
 
 export const Register = () => {
   const { register: registerUser, isLoading, error, clearError } = useAuth();
@@ -23,62 +24,49 @@ export const Register = () => {
 
   const onSubmit = (data) => {
     clearError();
+    const verificationParams = new URLSearchParams({
+      email: data.email,
+      redirect: redirectUrl
+    });
+
+    if (prefillUrl) {
+      verificationParams.set('url', prefillUrl);
+    }
+
     registerUser(data, {
       onSuccess: () => {
-        if (prefillUrl) {
-          navigate('/analysis', { state: { url: prefillUrl } });
-        } else {
-          navigate(redirectUrl);
-        }
+        navigate(`/verify-email?${verificationParams.toString()}`, {
+          state: {
+            email: data.email,
+            redirectUrl,
+            url: prefillUrl
+          }
+        });
       }
     });
   };
 
   return (
-    <div className="page-shell flex items-center justify-center">
-      <div className="grid w-full max-w-5xl gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-        <div className="card hidden lg:flex lg:flex-col lg:justify-between lg:bg-slate-950 lg:text-white">
-          <div>
-            <div className="section-kicker mb-6 border-white/10 bg-white/10 text-primary-100 dark:bg-white/10">
-              <ScanLine className="h-4 w-4" />
-              Create account
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight">Start with a cleaner, easier-to-read website review workflow.</h1>
-            <p className="mt-5 text-sm leading-7 text-slate-300">
-              Create an account to save reports, compare changes over time, share public links, and coordinate fixes with your team.
-            </p>
-          </div>
-          <div className="grid gap-3">
-            {[
-              'Save every audit in one responsive dashboard',
-              'Generate reports that are easier to scan and explain',
-              'Turn findings into tasks, comments, and exportable deliverables'
-            ].map((item) => (
-              <div key={item} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-                {item}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card mx-auto w-full max-w-md space-y-6 sm:space-y-8 lg:max-w-none">
-          <div className="text-center">
-            <Link to="/" className="inline-flex items-center gap-2 mb-8 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
-              <ArrowLeft className="w-4 h-4" />
-              Back to home
-            </Link>
-            <div className="flex justify-center mb-4">
-              <ScanLine className="w-12 h-12 text-primary-600 dark:text-primary-400" />
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
-              Create your account
-            </h2>
-            <p className="mt-2 text-slate-600 dark:text-slate-400">
-              Start analyzing websites in minutes
-            </p>
-          </div>
-
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-6">
+    <AuthShell
+      backTo="/"
+      backLabel="Back to home"
+      badge={
+        <>
+          <ScanLine className="h-4 w-4" />
+          Create account
+        </>
+      }
+      title="Create your account"
+      description="Start analyzing websites in minutes with a simpler, easier-to-follow workflow."
+      asideTitle="Start with a cleaner website review workflow."
+      asideDescription="Create an account to save reports, compare progress over time, and turn technical findings into clear follow-up work."
+      asidePoints={[
+        'Keep every audit in one responsive dashboard that is easier to scan.',
+        'Share readable reports with teammates, clients, or stakeholders.',
+        'Turn findings into tasks, comments, exports, and next steps faster.'
+      ]}
+    >
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
@@ -92,10 +80,11 @@ export const Register = () => {
                     className="input-field pl-11"
                     placeholder="John Doe"
                     disabled={isLoading}
+                    autoComplete="name"
                   />
                 </div>
                 {errors.name && (
-                  <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                  <p className="mt-1 flex items-center gap-1 text-sm text-red-500" role="alert">
                     <AlertCircle className="w-3 h-3" />
                     {errors.name.message}
                   </p>
@@ -114,10 +103,14 @@ export const Register = () => {
                     className="input-field pl-11"
                     placeholder="you@example.com"
                     disabled={isLoading}
+                    autoComplete="email"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    spellCheck="false"
                   />
                 </div>
                 {errors.email && (
-                  <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                  <p className="mt-1 flex items-center gap-1 text-sm text-red-500" role="alert">
                     <AlertCircle className="w-3 h-3" />
                     {errors.email.message}
                   </p>
@@ -136,14 +129,18 @@ export const Register = () => {
                     className="input-field pl-11"
                     placeholder="********"
                     disabled={isLoading}
+                    autoComplete="new-password"
                   />
                 </div>
                 {errors.password && (
-                  <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                  <p className="mt-1 flex items-center gap-1 text-sm text-red-500" role="alert">
                     <AlertCircle className="w-3 h-3" />
                     {errors.password.message}
                   </p>
                 )}
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  Use at least 8 characters, including uppercase, lowercase, and a number.
+                </p>
               </div>
 
               <div>
@@ -158,10 +155,11 @@ export const Register = () => {
                     className="input-field pl-11"
                     placeholder="********"
                     disabled={isLoading}
+                    autoComplete="new-password"
                   />
                 </div>
                 {errors.confirmPassword && (
-                  <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                  <p className="mt-1 flex items-center gap-1 text-sm text-red-500" role="alert">
                     <AlertCircle className="w-3 h-3" />
                     {errors.confirmPassword.message}
                   </p>
@@ -170,7 +168,7 @@ export const Register = () => {
             </div>
 
             {error && (
-              <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
+              <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400" role="alert">
                 <AlertCircle className="w-4 h-4" />
                 {error}
               </div>
@@ -198,10 +196,19 @@ export const Register = () => {
                 Sign in
               </Link>
             </p>
-          </form>
-        </div>
-      </div>
-    </div>
+            <p className="text-center text-sm text-slate-600 dark:text-slate-400">
+              Need to finish a signup?{' '}
+              <Link
+                to={prefillUrl
+                  ? `/verify-email?url=${encodeURIComponent(prefillUrl)}&redirect=${encodeURIComponent(redirectUrl)}`
+                  : `/verify-email?redirect=${encodeURIComponent(redirectUrl)}`}
+                className="font-medium text-primary-600 dark:text-primary-400 hover:underline"
+              >
+                Verify your email
+              </Link>
+            </p>
+      </form>
+    </AuthShell>
   );
 };
 
