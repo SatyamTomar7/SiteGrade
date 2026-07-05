@@ -6,6 +6,8 @@ import { classifyPageRole, classifyPageType } from '../modules/analysis/analysis
 
 const SCREENSHOTS_DIR = path.resolve(process.env.SCREENSHOTS_DIR || './screenshots');
 const postLoadDelayMs = Math.max(Number(process.env.PUPPETEER_POST_LOAD_DELAY_MS) || 1000, 0);
+const navigationTimeoutMs = Math.max(Number(process.env.PUPPETEER_NAVIGATION_TIMEOUT_MS) || 45000, 5000);
+const navigationWaitUntil = String(process.env.PUPPETEER_WAIT_UNTIL || 'domcontentloaded').trim().toLowerCase();
 const captureScreenshots = !['0', 'false', 'no', 'off'].includes(
   String(process.env.ANALYSIS_CAPTURE_SCREENSHOTS ?? 'true').trim().toLowerCase()
 );
@@ -31,6 +33,13 @@ const TECH_PATTERNS = {
 
 const ACCESSIBILITY_SAMPLE_LIMIT = 5;
 const LINK_CHECK_LIMIT = 25;
+const resolveWaitUntil = () => {
+  if (['load', 'networkidle0', 'networkidle2', 'domcontentloaded'].includes(navigationWaitUntil)) {
+    return navigationWaitUntil;
+  }
+
+  return 'domcontentloaded';
+};
 
 const ensureDir = async () => {
   try {
@@ -252,7 +261,7 @@ const crawlSite = async (browser, startUrl, internalCandidateUrls, maxPages) => 
       const startedAt = Date.now();
       const response = await page.goto(targetUrl, {
         waitUntil: 'domcontentloaded',
-        timeout: 30000
+        timeout: navigationTimeoutMs
       });
       const title = await page.title();
       const bodyTextLength = await page.evaluate(() => document.body?.innerText?.length || 0);
@@ -353,11 +362,19 @@ export const analyzeWithPuppeteer = async (url, reportId, options = {}) => {
     });
 
     const startTime = Date.now();
+    const waitUntil = resolveWaitUntil();
     const navigationResponse = await page.goto(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000
+      waitUntil,
+      timeout: navigationTimeoutMs
     });
     const loadTime = Date.now() - startTime;
+
+    logger.info('Puppeteer navigation completed', {
+      url,
+      waitUntil,
+      navigationTimeoutMs,
+      loadTime
+    });
 
     if (!navigationResponse) {
       throw new Error('Failed to load page - no navigation response');

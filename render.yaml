@@ -13,6 +13,10 @@ services:
         value: 5000
       - key: PUPPETEER_CACHE_DIR
         value: ./.cache/puppeteer
+      - key: PUPPETEER_WAIT_UNTIL
+        value: domcontentloaded
+      - key: PUPPETEER_NAVIGATION_TIMEOUT_MS
+        value: 45000
       - key: CLIENT_URL
         value: https://sitegrade-frontend.onrender.com
       - key: PUBLIC_APP_URL
