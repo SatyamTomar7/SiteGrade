@@ -17,6 +17,9 @@ import { fileURLToPath } from 'url';
 const workerConcurrency = Math.max(Number(process.env.ANALYSIS_WORKER_CONCURRENCY) || 2, 1);
 const workerRateLimitMax = Math.max(Number(process.env.ANALYSIS_WORKER_RATE_LIMIT_MAX) || 5, 1);
 const workerRateLimitDurationMs = Math.max(Number(process.env.ANALYSIS_WORKER_RATE_LIMIT_DURATION_MS) || 60000, 1000);
+const shouldRunAuditsInParallel = !['0', 'false', 'no', 'off'].includes(
+  String(process.env.ANALYSIS_RUN_AUDITS_IN_PARALLEL ?? 'true').trim().toLowerCase()
+);
 
 const averageScoreSet = (sets = []) => ({
   performance: Math.round(sets.reduce((sum, item) => sum + (item.performance || 0), 0) / (sets.length || 1)),
@@ -72,21 +75,46 @@ const processAnalysis = async (job) => {
     await job.updateProgress(5);
     logger.info(`[Job ${job.id}] Phase 1: Starting Puppeteer and Lighthouse audits in parallel`);
 
-    const trackedPuppeteerPromise = analyzeWithPuppeteer(url, reportId, analysisConfig).then(async (result) => {
+    const runPuppeteerAudit = async () => {
+      logger.info(`[Job ${job.id}] Starting Puppeteer audit`);
+      const result = await analyzeWithPuppeteer(url, reportId, analysisConfig);
       await job.updateProgress(30);
       logger.info(`[Job ${job.id}] Puppeteer complete - detected ${result.techStack.length} technologies`);
       return result;
-    });
+    };
 
-    const trackedLighthousePromise = Promise.all(
-      auditProfiles.map((profile) => analyzeWithLighthouse(url, { profile }))
-    );
+    const runLighthouseAudits = async () => {
+      logger.info(`[Job ${job.id}] Starting Lighthouse audits`, {
+        profiles: auditProfiles,
+        parallel: shouldRunAuditsInParallel
+      });
+
+      if (shouldRunAuditsInParallel) {
+        return Promise.all(
+          auditProfiles.map((profile) => analyzeWithLighthouse(url, { profile }))
+        );
+      }
+
+      const results = [];
+      for (const profile of auditProfiles) {
+        results.push(await analyzeWithLighthouse(url, { profile }));
+      }
+
+      return results;
+    };
+
     const trackedFieldDataPromise = getCruxFieldData(url);
-    const [puppeteerData, lighthouseProfiles, fieldData] = await Promise.all([
-      trackedPuppeteerPromise,
-      trackedLighthousePromise,
-      trackedFieldDataPromise
-    ]);
+    const [puppeteerData, lighthouseProfiles, fieldData] = shouldRunAuditsInParallel
+      ? await Promise.all([
+          runPuppeteerAudit(),
+          runLighthouseAudits(),
+          trackedFieldDataPromise
+        ])
+      : [
+          await runPuppeteerAudit(),
+          await runLighthouseAudits(),
+          await trackedFieldDataPromise
+        ];
 
     await job.updateProgress(60);
     const lighthouseByProfile = Object.fromEntries(lighthouseProfiles.map((item) => [item.profile, item]));

@@ -37,6 +37,8 @@ services:
         value: true
       - key: RUN_SCHEDULE_WORKER_IN_API
         value: true
+      - key: ANALYSIS_RUN_AUDITS_IN_PARALLEL
+        value: false
 
   - type: static
     name: sitegrade-frontend
