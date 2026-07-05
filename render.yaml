@@ -39,6 +39,10 @@ services:
         value: true
       - key: ANALYSIS_RUN_AUDITS_IN_PARALLEL
         value: false
+      - key: ANALYSIS_WORKER_CONCURRENCY
+        value: 1
+      - key: ANALYSIS_QUEUE_ATTEMPTS
+        value: 1
 
   - type: static
     name: sitegrade-frontend

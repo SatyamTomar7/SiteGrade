@@ -73,7 +73,9 @@ const processAnalysis = async (job) => {
 
     // Phase 1: Launch core audits concurrently (0-60%)
     await job.updateProgress(5);
-    logger.info(`[Job ${job.id}] Phase 1: Starting Puppeteer and Lighthouse audits in parallel`);
+    logger.info(
+      `[Job ${job.id}] Phase 1: Starting Puppeteer and Lighthouse audits ${shouldRunAuditsInParallel ? 'in parallel' : 'sequentially'}`
+    );
 
     const runPuppeteerAudit = async () => {
       logger.info(`[Job ${job.id}] Starting Puppeteer audit`);
