@@ -2,11 +2,16 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { sendResponse } from '../../utils/apiResponse.js';
 import * as authService from './auth.service.js';
 
+const cookieSameSite = process.env.COOKIE_SAME_SITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax');
+const cookieSecure = process.env.COOKIE_SECURE
+  ? ['1', 'true', 'yes', 'on'].includes(process.env.COOKIE_SECURE.trim().toLowerCase())
+  : process.env.NODE_ENV === 'production';
+
 const setRefreshTokenCookie = (res, refreshToken) => {
   res.cookie('refreshToken', refreshToken, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: cookieSecure,
+    sameSite: cookieSameSite,
     maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
   });
 };
@@ -14,8 +19,8 @@ const setRefreshTokenCookie = (res, refreshToken) => {
 const clearRefreshTokenCookie = (res) => {
   res.cookie('refreshToken', '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    secure: cookieSecure,
+    sameSite: cookieSameSite,
     expires: new Date(0)
   });
 };
@@ -23,11 +28,7 @@ const clearRefreshTokenCookie = (res) => {
 export const register = asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
   const result = await authService.registerUser({ name, email, password });
-  setRefreshTokenCookie(res, result.refreshToken);
-  sendResponse(res, 201, {
-    user: result.user,
-    accessToken: result.accessToken
-  }, 'User registered successfully');
+  sendResponse(res, 201, result, 'Account created. Please verify your email with the code we sent.');
 });
 
 export const login = asyncHandler(async (req, res) => {
@@ -40,6 +41,46 @@ export const login = asyncHandler(async (req, res) => {
     user: result.user,
     accessToken: result.accessToken
   }, 'Login successful');
+});
+
+export const verifyEmail = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const result = await authService.verifyEmailOtp({ email, otp });
+  setRefreshTokenCookie(res, result.refreshToken);
+
+  sendResponse(res, 200, {
+    user: result.user,
+    accessToken: result.accessToken
+  }, result.alreadyVerified ? 'Email already verified' : 'Email verified successfully');
+});
+
+export const resendVerification = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  const result = await authService.resendEmailVerificationOtp({ email });
+  sendResponse(res, 200, result, 'A new verification code has been sent');
+});
+
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+  const result = await authService.requestPasswordResetOtp({ email });
+  sendResponse(
+    res,
+    200,
+    result,
+    'If that email is registered, a password reset code has been sent.'
+  );
+});
+
+export const verifyResetOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  const result = await authService.verifyPasswordResetOtp({ email, otp });
+  sendResponse(res, 200, result, 'Reset code verified successfully');
+});
+
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { email, resetToken, password, confirmPassword } = req.body;
+  const result = await authService.resetPasswordWithToken({ email, resetToken, password, confirmPassword });
+  sendResponse(res, 200, result, 'Password reset successfully. You can now sign in.');
 });
 
 export const refreshToken = asyncHandler(async (req, res) => {

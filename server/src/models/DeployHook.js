@@ -1,48 +1,17 @@
-import mongoose from 'mongoose';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
+import { SqlModel } from './_sqlModel.js';
 
-const deployHookSchema = new mongoose.Schema({
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    index: true
+export const DeployHook = new SqlModel({
+  tableName: 'deploy_hooks',
+  jsonFields: ['analysisConfig'],
+  defaultSort: { createdAt: -1 },
+  defaults: {
+    analysisConfig: {},
+    active: true,
+    lastTriggeredAt: null
   },
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  url: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  analysisConfig: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
-  token: {
-    type: String,
-    unique: true,
-    index: true
-  },
-  active: {
-    type: Boolean,
-    default: true
-  },
-  lastTriggeredAt: {
-    type: Date,
-    default: null
-  }
-}, {
-  timestamps: true
+  beforeSave: async (data) => ({
+    ...data,
+    token: data.token || crypto.randomBytes(18).toString('hex')
+  })
 });
-
-deployHookSchema.pre('validate', function () {
-  if (!this.token) {
-    this.token = crypto.randomBytes(18).toString('hex');
-  }
-});
-
-export const DeployHook = mongoose.model('DeployHook', deployHookSchema);

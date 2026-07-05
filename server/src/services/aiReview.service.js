@@ -48,6 +48,151 @@ const normalizeAiFixes = (items = []) => items.map((item) => ({
   whyItMatters: item.whyItMatters || ''
 }));
 
+const stripCodeFences = (value = '') =>
+  String(value)
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+const extractJsonObject = (value = '') => {
+  const start = value.indexOf('{');
+  const end = value.lastIndexOf('}');
+
+  if (start === -1 || end === -1 || end <= start) {
+    return value.trim();
+  }
+
+  return value.slice(start, end + 1);
+};
+
+const escapeJsonControlCharacters = (value = '') => {
+  let result = '';
+  let inString = false;
+  let escaping = false;
+
+  for (const char of value) {
+    if (escaping) {
+      result += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      result += char;
+      escaping = true;
+      continue;
+    }
+
+    if (char === '"') {
+      result += char;
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      if (char === '\n') {
+        result += '\\n';
+        continue;
+      }
+
+      if (char === '\r') {
+        result += '\\r';
+        continue;
+      }
+
+      if (char === '\t') {
+        result += '\\t';
+        continue;
+      }
+    }
+
+    result += char;
+  }
+
+  return result;
+};
+
+const removeTrailingCommas = (value = '') => value.replace(/,\s*([}\]])/g, '$1');
+
+const parseGeminiJson = (rawText) => {
+  const candidates = [];
+  const cleaned = stripCodeFences(rawText);
+  const extracted = extractJsonObject(cleaned);
+
+  candidates.push(cleaned);
+
+  if (extracted !== cleaned) {
+    candidates.push(extracted);
+  }
+
+  const repaired = removeTrailingCommas(escapeJsonControlCharacters(extracted));
+  if (!candidates.includes(repaired)) {
+    candidates.push(repaired);
+  }
+
+  let lastError;
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error('Unable to parse Gemini JSON response');
+};
+
+const requestGeminiText = async (apiKey, prompt, generationConfig) => {
+  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
+      generationConfig
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json();
+  const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!text) {
+    throw new Error('Empty response from Gemini API');
+  }
+
+  return text;
+};
+
+const repairGeminiJson = async (apiKey, rawText) => {
+  const repairPrompt = `You will receive malformed JSON that was intended to match a website audit schema.
+Return only valid JSON.
+Do not add markdown fences.
+Do not add commentary.
+Preserve the meaning of the content as closely as possible.
+If a field is incomplete, finish it with the smallest valid value that keeps the JSON schema coherent.
+
+Malformed JSON:
+${rawText}`;
+
+  const repairedText = await requestGeminiText(apiKey, repairPrompt, {
+    temperature: 0,
+    maxOutputTokens: 3072,
+    responseMimeType: 'application/json'
+  });
+
+  return parseGeminiJson(repairedText);
+};
+
 const inferSiteContext = (puppeteerData = {}) => {
   const techStack = puppeteerData.techStack || [];
   const lowerTitle = (puppeteerData.title || '').toLowerCase();
@@ -89,162 +234,148 @@ export const generateAIReview = async (lighthouseData, puppeteerData) => {
   }
 
   const prompt = buildPrompt(lighthouseData, puppeteerData);
+  const responseSchema = {
+    type: 'object',
+    properties: {
+      recruiterReview: {
+        type: 'string',
+        description: 'A detailed 3-4 paragraph review written as if a technical recruiter is evaluating the website quality for a job candidate portfolio. Be honest but constructive. Mention specific metrics.'
+      },
+      strengths: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '3-5 specific strengths of the website based on the data'
+      },
+      weaknesses: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '3-5 specific weaknesses or areas for improvement'
+      },
+      overallGrade: {
+        type: 'string',
+        enum: ['A+', 'A', 'B', 'C', 'D'],
+        description: 'Overall letter grade based on all metrics. A+ = exceptional, A = very good, B = good with room for improvement, C = acceptable but needs work, D = poor'
+      },
+      portfolioReadiness: {
+        type: 'object',
+        properties: {
+          overallScore: { type: 'number' },
+          visualPolish: { type: 'number' },
+          trustProfessionalism: { type: 'number' },
+          projectClarity: { type: 'number' },
+          contactClarity: { type: 'number' },
+          mobileReadiness: { type: 'number' },
+          hiringImpression: { type: 'number' },
+          summary: { type: 'string' }
+        },
+        required: ['overallScore', 'visualPolish', 'trustProfessionalism', 'projectClarity', 'contactClarity', 'mobileReadiness', 'hiringImpression', 'summary']
+      },
+      recruiterMode: {
+        type: 'object',
+        properties: {
+          hiringSignal: {
+            type: 'string',
+            description: 'One-line recruiter signal such as strong shortlist, mixed signal, or not yet interview-ready'
+          },
+          recruiterVerdict: {
+            type: 'string',
+            description: 'A concise recruiter-oriented verdict explaining whether the site supports a strong candidate impression'
+          },
+          resumePitch: {
+            type: 'string',
+            description: 'A short project pitch the candidate can reuse on resume or interview introductions'
+          }
+        },
+        required: ['hiringSignal', 'recruiterVerdict', 'resumePitch']
+      },
+      actionPlan: {
+        type: 'array',
+        description: '3-5 prioritized actions ordered by impact',
+        items: {
+          type: 'object',
+          properties: {
+            priority: {
+              type: 'string',
+              enum: ['Quick Win', 'High Impact', 'Must Fix']
+            },
+            severity: {
+              type: 'string',
+              enum: ['Low', 'Medium', 'High', 'Critical']
+            },
+            effort: {
+              type: 'string',
+              enum: ['Low', 'Medium', 'High']
+            },
+            estimatedScoreImpact: { type: 'number' },
+            issue: { type: 'string' },
+            recommendation: { type: 'string' },
+            expectedOutcome: { type: 'string' },
+            rationale: { type: 'string' }
+          },
+          required: ['priority', 'severity', 'effort', 'estimatedScoreImpact', 'issue', 'recommendation', 'expectedOutcome', 'rationale']
+        }
+      },
+      aiFixes: {
+        type: 'array',
+        description: '2-4 practical fix suggestions with concise implementation examples',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            category: { type: 'string' },
+            severity: {
+              type: 'string',
+              enum: ['Low', 'Medium', 'High', 'Critical']
+            },
+            effort: {
+              type: 'string',
+              enum: ['Low', 'Medium', 'High']
+            },
+            estimatedScoreImpact: { type: 'number' },
+            suggestion: { type: 'string' },
+            codeExample: { type: 'string' },
+            whyItMatters: { type: 'string' }
+          },
+          required: ['title', 'category', 'severity', 'effort', 'estimatedScoreImpact', 'suggestion', 'codeExample', 'whyItMatters']
+        }
+      },
+      interviewSummary: {
+        type: 'object',
+        properties: {
+          resumeBullets: {
+            type: 'array',
+            items: { type: 'string' }
+          },
+          projectDescription: { type: 'string' },
+          techStackSummary: { type: 'string' },
+          challengesSolved: {
+            type: 'array',
+            items: { type: 'string' }
+          }
+        },
+        required: ['resumeBullets', 'projectDescription', 'techStackSummary', 'challengesSolved']
+      }
+    },
+    required: ['recruiterReview', 'strengths', 'weaknesses', 'overallGrade', 'portfolioReadiness', 'recruiterMode', 'actionPlan', 'aiFixes', 'interviewSummary']
+  };
 
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          temperature: 0.3,
-          maxOutputTokens: 2048,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'object',
-            properties: {
-              recruiterReview: {
-                type: 'string',
-                description: 'A detailed 3-4 paragraph review written as if a technical recruiter is evaluating the website quality for a job candidate portfolio. Be honest but constructive. Mention specific metrics.'
-              },
-              strengths: {
-                type: 'array',
-                items: { type: 'string' },
-                description: '3-5 specific strengths of the website based on the data'
-              },
-              weaknesses: {
-                type: 'array',
-                items: { type: 'string' },
-                description: '3-5 specific weaknesses or areas for improvement'
-              },
-              overallGrade: {
-                type: 'string',
-                enum: ['A+', 'A', 'B', 'C', 'D'],
-                description: 'Overall letter grade based on all metrics. A+ = exceptional, A = very good, B = good with room for improvement, C = acceptable but needs work, D = poor'
-              },
-              portfolioReadiness: {
-                type: 'object',
-                properties: {
-                  overallScore: { type: 'number' },
-                  visualPolish: { type: 'number' },
-                  trustProfessionalism: { type: 'number' },
-                  projectClarity: { type: 'number' },
-                  contactClarity: { type: 'number' },
-                  mobileReadiness: { type: 'number' },
-                  hiringImpression: { type: 'number' },
-                  summary: { type: 'string' }
-                },
-                required: ['overallScore', 'visualPolish', 'trustProfessionalism', 'projectClarity', 'contactClarity', 'mobileReadiness', 'hiringImpression', 'summary']
-              },
-              recruiterMode: {
-                type: 'object',
-                properties: {
-                  hiringSignal: {
-                    type: 'string',
-                    description: 'One-line recruiter signal such as strong shortlist, mixed signal, or not yet interview-ready'
-                  },
-                  recruiterVerdict: {
-                    type: 'string',
-                    description: 'A concise recruiter-oriented verdict explaining whether the site supports a strong candidate impression'
-                  },
-                  resumePitch: {
-                    type: 'string',
-                    description: 'A short project pitch the candidate can reuse on resume or interview introductions'
-                  }
-                },
-                required: ['hiringSignal', 'recruiterVerdict', 'resumePitch']
-              },
-              actionPlan: {
-                type: 'array',
-                description: '3-5 prioritized actions ordered by impact',
-                items: {
-                  type: 'object',
-                  properties: {
-                    priority: {
-                      type: 'string',
-                      enum: ['Quick Win', 'High Impact', 'Must Fix']
-                    },
-                    severity: {
-                      type: 'string',
-                      enum: ['Low', 'Medium', 'High', 'Critical']
-                    },
-                    effort: {
-                      type: 'string',
-                      enum: ['Low', 'Medium', 'High']
-                    },
-                    estimatedScoreImpact: { type: 'number' },
-                    issue: { type: 'string' },
-                    recommendation: { type: 'string' },
-                    expectedOutcome: { type: 'string' },
-                    rationale: { type: 'string' }
-                  },
-                  required: ['priority', 'severity', 'effort', 'estimatedScoreImpact', 'issue', 'recommendation', 'expectedOutcome', 'rationale']
-                }
-              },
-              aiFixes: {
-                type: 'array',
-                description: '2-4 practical fix suggestions with concise implementation examples',
-                items: {
-                  type: 'object',
-                  properties: {
-                    title: { type: 'string' },
-                    category: { type: 'string' },
-                    severity: {
-                      type: 'string',
-                      enum: ['Low', 'Medium', 'High', 'Critical']
-                    },
-                    effort: {
-                      type: 'string',
-                      enum: ['Low', 'Medium', 'High']
-                    },
-                    estimatedScoreImpact: { type: 'number' },
-                    suggestion: { type: 'string' },
-                    codeExample: { type: 'string' },
-                    whyItMatters: { type: 'string' }
-                  },
-                  required: ['title', 'category', 'severity', 'effort', 'estimatedScoreImpact', 'suggestion', 'codeExample', 'whyItMatters']
-                }
-              },
-              interviewSummary: {
-                type: 'object',
-                properties: {
-                  resumeBullets: {
-                    type: 'array',
-                    items: { type: 'string' }
-                  },
-                  projectDescription: { type: 'string' },
-                  techStackSummary: { type: 'string' },
-                  challengesSolved: {
-                    type: 'array',
-                    items: { type: 'string' }
-                  }
-                },
-                required: ['resumeBullets', 'projectDescription', 'techStackSummary', 'challengesSolved']
-              }
-            },
-            required: ['recruiterReview', 'strengths', 'weaknesses', 'overallGrade', 'portfolioReadiness', 'recruiterMode', 'actionPlan', 'aiFixes', 'interviewSummary']
-          }
-        }
-      })
+    const text = await requestGeminiText(apiKey, prompt, {
+      temperature: 0.1,
+      maxOutputTokens: 3072,
+      responseMimeType: 'application/json',
+      responseSchema
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    let parsed;
+    try {
+      parsed = parseGeminiJson(text);
+    } catch (parseError) {
+      logger.warn('Gemini returned malformed JSON; attempting repair pass', {
+        message: parseError.message
+      });
+      parsed = await repairGeminiJson(apiKey, text);
     }
-
-    const result = await response.json();
-    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!text) {
-      throw new Error('Empty response from Gemini API');
-    }
-
-    const parsed = JSON.parse(text);
     
     logger.info(`AI review generated with grade: ${parsed.overallGrade}`);
     
