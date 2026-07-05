@@ -3,6 +3,8 @@ import * as chromeLauncher from 'chrome-launcher';
 import { logger } from '../config/logger.js';
 import { getBrowserLaunchArgs, getChromeExecutablePath } from '../utils/browser.js';
 
+const lighthouseTimeoutMs = Math.max(Number(process.env.LIGHTHOUSE_TIMEOUT_MS) || 120000, 30000);
+
 const PERFORMANCE_OPPORTUNITY_AUDITS = [
   'render-blocking-resources',
   'unused-javascript',
@@ -167,15 +169,22 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
     });
 
     const profileConfig = getProfileConfig(profile);
-    const runnerResult = await lighthouse(url, {
-      logLevel: 'error',
-      output: 'json',
-      onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
-      port: chrome.port,
-      throttling: profileConfig.throttling,
-      screenEmulation: profileConfig.screenEmulation,
-      formFactor: profileConfig.formFactor
-    });
+    const runnerResult = await Promise.race([
+      lighthouse(url, {
+        logLevel: 'error',
+        output: 'json',
+        onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+        port: chrome.port,
+        throttling: profileConfig.throttling,
+        screenEmulation: profileConfig.screenEmulation,
+        formFactor: profileConfig.formFactor
+      }),
+      new Promise((_, reject) => {
+        const timeoutError = new Error(`Lighthouse audit timed out after ${lighthouseTimeoutMs}ms`);
+        timeoutError.code = 'LIGHTHOUSE_TIMEOUT';
+        setTimeout(() => reject(timeoutError), lighthouseTimeoutMs);
+      })
+    ]);
 
     if (!runnerResult?.lhr) {
       const error = new Error('Lighthouse did not return a valid LHR payload');

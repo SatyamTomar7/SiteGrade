@@ -11,6 +11,10 @@ const redisOptions = {
   lazyConnect: true,
   maxRetriesPerRequest: null,
   enableReadyCheck: true,
+  enableOfflineQueue: false,
+  connectTimeout: Math.max(Number(process.env.REDIS_CONNECT_TIMEOUT_MS) || 10000, 1000),
+  commandTimeout: Math.max(Number(process.env.REDIS_COMMAND_TIMEOUT_MS) || 15000, 1000),
+  keepAlive: Math.max(Number(process.env.REDIS_KEEPALIVE_MS) || 10000, 1000),
   retryStrategy: (attempt) => {
     const delay = Math.min(attempt * 250, 5000);
     logger.warn(`Redis reconnect attempt ${attempt}; retrying in ${delay}ms`);

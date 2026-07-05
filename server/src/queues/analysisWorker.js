@@ -14,14 +14,16 @@ import { handleScheduledReportCompleted, handleScheduledReportFailed } from '../
 import { closeSharedPuppeteerBrowser } from '../utils/browser.js';
 import { fileURLToPath } from 'url';
 
-const workerConcurrency = Math.max(Number(process.env.ANALYSIS_WORKER_CONCURRENCY) || 2, 1);
+const workerConcurrency = Math.max(Number(process.env.ANALYSIS_WORKER_CONCURRENCY) || 1, 1);
 const workerRateLimitMax = Math.max(Number(process.env.ANALYSIS_WORKER_RATE_LIMIT_MAX) || 5, 1);
 const workerRateLimitDurationMs = Math.max(Number(process.env.ANALYSIS_WORKER_RATE_LIMIT_DURATION_MS) || 60000, 1000);
-const defaultParallelAuditMode = process.env.NODE_ENV !== 'production';
+const defaultParallelAuditMode = false;
 const shouldRunAuditsInParallel = !['0', 'false', 'no', 'off'].includes(
   String(process.env.ANALYSIS_RUN_AUDITS_IN_PARALLEL ?? String(defaultParallelAuditMode)).trim().toLowerCase()
 );
-const analysisJobLockDurationMs = Math.max(Number(process.env.ANALYSIS_JOB_LOCK_DURATION_MS) || 180000, 30000);
+const analysisJobLockDurationMs = Math.max(Number(process.env.ANALYSIS_JOB_LOCK_DURATION_MS) || 600000, 30000);
+const analysisJobStalledIntervalMs = Math.max(Number(process.env.ANALYSIS_JOB_STALLED_INTERVAL_MS) || 30000, 5000);
+const analysisJobMaxStalledCount = Math.max(Number(process.env.ANALYSIS_JOB_MAX_STALLED_COUNT) || 2, 1);
 
 const averageScoreSet = (sets = []) => ({
   performance: Math.round(sets.reduce((sum, item) => sum + (item.performance || 0), 0) / (sets.length || 1)),
@@ -150,39 +152,42 @@ const processAnalysis = async (job) => {
       summary: 'No competitor benchmark was completed.'
     };
     if (analysisConfig.competitorUrls?.length) {
-      const competitorResults = await Promise.all(
-        analysisConfig.competitorUrls.map(async (competitorUrl) => {
-          try {
-            const [competitorPuppeteer, competitorLighthouse] = await Promise.all([
-              analyzeWithPuppeteer(competitorUrl, `${reportId}-benchmark`, { scanMode: 'single', crawlMaxPages: 1 }),
-              analyzeWithLighthouse(competitorUrl, { profile: auditProfiles[0] || 'mobile' })
-            ]);
+      const competitorResults = [];
 
-            return {
-              status: 'completed',
-              url: competitorUrl,
-              overallScore: Math.round((
-                competitorLighthouse.scores.performance +
-                competitorLighthouse.scores.seo +
-                competitorLighthouse.scores.accessibility +
-                competitorLighthouse.scores.bestPractices +
-                competitorPuppeteer.securityScore
-              ) / 5),
-              scores: {
-                ...competitorLighthouse.scores,
-                security: competitorPuppeteer.securityScore
-              },
-              pageType: competitorPuppeteer.pageType
-            };
-          } catch (error) {
-            return {
-              status: 'failed',
-              url: competitorUrl,
-              error: error.message
-            };
-          }
-        })
-      );
+      for (const competitorUrl of analysisConfig.competitorUrls) {
+        try {
+          const competitorPuppeteer = await analyzeWithPuppeteer(competitorUrl, `${reportId}-benchmark`, {
+            scanMode: 'single',
+            crawlMaxPages: 1
+          });
+          const competitorLighthouse = await analyzeWithLighthouse(competitorUrl, {
+            profile: auditProfiles[0] || 'mobile'
+          });
+
+          competitorResults.push({
+            status: 'completed',
+            url: competitorUrl,
+            overallScore: Math.round((
+              competitorLighthouse.scores.performance +
+              competitorLighthouse.scores.seo +
+              competitorLighthouse.scores.accessibility +
+              competitorLighthouse.scores.bestPractices +
+              competitorPuppeteer.securityScore
+            ) / 5),
+            scores: {
+              ...competitorLighthouse.scores,
+              security: competitorPuppeteer.securityScore
+            },
+            pageType: competitorPuppeteer.pageType
+          });
+        } catch (error) {
+          competitorResults.push({
+            status: 'failed',
+            url: competitorUrl,
+            error: error.message
+          });
+        }
+      }
 
       benchmarkData = buildCompetitorBenchmark({
         url,
@@ -478,6 +483,8 @@ export const startAnalysisWorker = () => {
     connection: redisClient,
     concurrency: workerConcurrency,
     lockDuration: analysisJobLockDurationMs,
+    stalledInterval: analysisJobStalledIntervalMs,
+    maxStalledCount: analysisJobMaxStalledCount,
     limiter: {
       max: workerRateLimitMax,
       duration: workerRateLimitDurationMs
@@ -557,7 +564,9 @@ export const startAnalysisWorker = () => {
     rateLimitMax: workerRateLimitMax,
     rateLimitDurationMs: workerRateLimitDurationMs,
     shouldRunAuditsInParallel,
-    analysisJobLockDurationMs
+    analysisJobLockDurationMs,
+    analysisJobStalledIntervalMs,
+    analysisJobMaxStalledCount
   });
   return workerInstance;
 };

@@ -139,10 +139,11 @@ export const closeSharedPuppeteerBrowser = async () => {
     return;
   }
 
+  const activeBrowserPromise = sharedBrowserPromise;
   sharedBrowserPromise = null;
 
   try {
-    const browser = await sharedBrowserPromise;
+    const browser = await activeBrowserPromise;
     await browser.close();
   } catch (error) {
     logger.warn('Failed to close shared Puppeteer browser', {

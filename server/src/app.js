@@ -15,6 +15,7 @@ import analysisRoutes from './modules/analysis/analysis.routes.js';
 import schedulesRoutes from './modules/schedules/schedules.routes.js';
 import hooksRoutes from './modules/hooks/hooks.routes.js';
 import workspacesRoutes from './modules/workspaces/workspaces.routes.js';
+import { closeAnalysisQueueResources } from './queues/analysisQueue.js';
 import { startAnalysisWorker } from './queues/analysisWorker.js';
 import { startScheduleWorker, stopScheduleWorker } from './queues/scheduleWorker.js';
 
@@ -115,6 +116,7 @@ app.use((req, res) => {
 const gracefulShutdown = async (signal) => {
   logger.info(`${signal} received. Shutting down gracefully...`);
   stopScheduleWorker();
+  await closeAnalysisQueueResources();
   await closeRedis();
   process.exit(0);
 };

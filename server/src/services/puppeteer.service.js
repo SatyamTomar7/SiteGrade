@@ -12,6 +12,7 @@ const captureScreenshots = !['0', 'false', 'no', 'off'].includes(
   String(process.env.ANALYSIS_CAPTURE_SCREENSHOTS ?? 'true').trim().toLowerCase()
 );
 const fetchTimeoutMs = Math.max(Number(process.env.ANALYSIS_FETCH_TIMEOUT_MS) || 8000, 1000);
+const linkCheckConcurrency = Math.max(Number(process.env.ANALYSIS_LINK_CHECK_CONCURRENCY) || 4, 1);
 
 const TECH_PATTERNS = {
   React: [{ type: 'selector', value: '[data-reactroot], [data-reactid]' }, { type: 'script', value: 'react' }, { type: 'global', value: 'React' }],
@@ -131,7 +132,7 @@ const inspectLink = async (targetUrl) => {
 
 const inspectLinks = async (links = []) => {
   const uniqueLinks = [...new Set(links.filter(Boolean))].slice(0, LINK_CHECK_LIMIT);
-  const results = await Promise.all(uniqueLinks.map((link) => inspectLink(link)));
+  const results = await mapWithConcurrency(uniqueLinks, linkCheckConcurrency, (link) => inspectLink(link));
 
   const brokenLinks = [];
   const redirectChains = [];
@@ -663,4 +664,19 @@ export const analyzeWithPuppeteer = async (url, reportId, options = {}) => {
       await page.close().catch(() => {});
     }
   }
+};
+const mapWithConcurrency = async (items = [], concurrency, mapper) => {
+  const results = new Array(items.length);
+  let currentIndex = 0;
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (currentIndex < items.length) {
+      const itemIndex = currentIndex;
+      currentIndex += 1;
+      results[itemIndex] = await mapper(items[itemIndex], itemIndex);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 };
