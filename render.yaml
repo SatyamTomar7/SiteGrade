@@ -18,9 +18,9 @@ services:
       - key: PUPPETEER_NAVIGATION_TIMEOUT_MS
         value: 45000
       - key: CLIENT_URL
-        value: https://sitegrade-frontend.onrender.com
+        value: https://site-grade.vercel.app
       - key: PUBLIC_APP_URL
-        value: https://sitegrade-frontend.onrender.com
+        value: https://site-grade.vercel.app
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL

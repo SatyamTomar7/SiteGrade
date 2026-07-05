@@ -79,12 +79,25 @@ export const triggerDeployHook = async (token, metadata = {}) => {
     triggeredBy: 'manual'
   };
   const report = await analysisService.createReport(hook.userId, hook.url, analysisConfig);
-  const job = await analysisQueue.add('analyze-website', {
-    reportId: report._id.toString(),
-    url: hook.url,
-    analysisConfig,
-    deployMetadata: metadata
-  });
+  let job;
+
+  try {
+    job = await analysisQueue.add('analyze-website', {
+      reportId: report._id.toString(),
+      url: hook.url,
+      analysisConfig,
+      deployMetadata: metadata
+    });
+  } catch (queueError) {
+    await analysisService.markReportFailed(
+      report._id,
+      'Deploy-triggered analysis could not be queued because Redis is temporarily unavailable.'
+    );
+
+    const error = new Error('Analysis queue is temporarily unavailable. Please try again in a moment.');
+    error.statusCode = 503;
+    throw error;
+  }
 
   hook.lastTriggeredAt = new Date();
   await hook.save();

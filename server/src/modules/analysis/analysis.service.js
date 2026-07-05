@@ -98,8 +98,9 @@ const ensureArray = (value) => Array.isArray(value) ? value : [];
 const ensureNumber = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 const formatMetricLabel = (metric) => metric.replace(/([A-Z])/g, ' $1').trim();
 const buildUserCacheTag = (userId) => `sitegrade:analysis:user:${userId}`;
-const buildListReportsCacheKey = (userId, filters) => `${buildUserCacheTag(userId)}:reports:${JSON.stringify(filters)}`;
-const buildDashboardInsightsCacheKey = (userId) => `${buildUserCacheTag(userId)}:insights`;
+const buildUserCacheVersionKey = (userId) => `${buildUserCacheTag(userId)}:version`;
+const buildListReportsCacheKey = (userId, cacheVersion, filters) => `${buildUserCacheTag(userId)}:v${cacheVersion}:reports:${JSON.stringify(filters)}`;
+const buildDashboardInsightsCacheKey = (userId, cacheVersion) => `${buildUserCacheTag(userId)}:v${cacheVersion}:insights`;
 
 const readCache = async (key) => {
   if (!isRedisConfigured || redisClient.status !== 'ready') {
@@ -127,18 +128,27 @@ const writeCache = async (key, value, ttlSeconds) => {
   }
 };
 
+const getUserCacheVersion = async (userId) => {
+  if (!userId || !isRedisConfigured || redisClient.status !== 'ready') {
+    return 1;
+  }
+
+  try {
+    const version = await redisClient.get(buildUserCacheVersionKey(userId));
+    return Math.max(Number(version) || 1, 1);
+  } catch (error) {
+    logger.warn(`Cache version read failed for user ${userId}: ${error.message}`);
+    return 1;
+  }
+};
+
 const invalidateUserAnalysisCache = async (userId) => {
   if (!userId || !isRedisConfigured || redisClient.status !== 'ready') {
     return;
   }
 
-  const cachePrefix = `${buildUserCacheTag(userId)}:*`;
-
   try {
-    const keys = await redisClient.keys(cachePrefix);
-    if (keys.length > 0) {
-      await redisClient.del(...keys);
-    }
+    await redisClient.incr(buildUserCacheVersionKey(userId));
   } catch (error) {
     logger.warn(`Cache invalidation failed for user ${userId}: ${error.message}`);
   }
@@ -444,7 +454,8 @@ export const listReports = async (userId, filters) => {
     page: safePage,
     limit: safeLimit
   };
-  const cacheKey = buildListReportsCacheKey(userId, normalizedFilters);
+  const cacheVersion = await getUserCacheVersion(userId);
+  const cacheKey = buildListReportsCacheKey(userId, cacheVersion, normalizedFilters);
   const cached = await readCache(cacheKey);
 
   if (cached) {
@@ -471,7 +482,8 @@ export const listReports = async (userId, filters) => {
 };
 
 export const getDashboardInsights = async (userId) => {
-  const cacheKey = buildDashboardInsightsCacheKey(userId);
+  const cacheVersion = await getUserCacheVersion(userId);
+  const cacheKey = buildDashboardInsightsCacheKey(userId, cacheVersion);
   const cached = await readCache(cacheKey);
 
   if (cached) {

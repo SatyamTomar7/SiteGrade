@@ -7,13 +7,27 @@ let pool;
 
 const isEnabled = (value) => ['1', 'true', 'yes', 'on', 'require'].includes(String(value).trim().toLowerCase());
 
+const shouldUseSslMode = (value) => {
+  const normalized = String(value).trim().toLowerCase();
+
+  if (!normalized) {
+    return false;
+  }
+
+  if (['0', 'false', 'no', 'off', 'disable'].includes(normalized)) {
+    return false;
+  }
+
+  return true;
+};
+
 const shouldUseSsl = (connectionString) => {
   if (process.env.DATABASE_SSL !== undefined) {
     return isEnabled(process.env.DATABASE_SSL);
   }
 
   if (process.env.PGSSLMODE !== undefined) {
-    return isEnabled(process.env.PGSSLMODE);
+    return shouldUseSslMode(process.env.PGSSLMODE);
   }
 
   try {

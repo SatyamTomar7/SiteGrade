@@ -1,8 +1,12 @@
 import { ScanSchedule } from '../../models/ScanSchedule.js';
 import { Notification } from '../../models/Notification.js';
 import { WebsiteReport } from '../../models/WebsiteReport.js';
+import { User } from '../../models/User.js';
 import { analysisQueue } from '../../queues/analysisQueue.js';
 import { logger } from '../../config/logger.js';
+import { sendEmail } from '../../services/email.service.js';
+import { sanitizeEmailTemplateValue } from '../../services/email.service.js';
+import * as analysisService from '../analysis/analysis.service.js';
 
 const SCHEDULE_INTERVALS = {
   daily: 24 * 60 * 60 * 1000,
@@ -24,6 +28,34 @@ const normalizeDeliveryChannels = (channels = []) => {
   }
 
   return filtered;
+};
+
+const buildScheduleEmailHtml = ({ schedule, title, message, report }) => {
+  const safeTitle = sanitizeEmailTemplateValue(title);
+  const safeMessage = sanitizeEmailTemplateValue(message);
+  const safeScheduleName = sanitizeEmailTemplateValue(schedule.name);
+  const safeUrl = sanitizeEmailTemplateValue(schedule.url);
+  const safeReportId = sanitizeEmailTemplateValue(report?._id || report?.id || 'N/A');
+
+  return `
+    <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a">
+      <h2 style="margin-bottom:12px">${safeTitle}</h2>
+      <p><strong>Schedule:</strong> ${safeScheduleName}</p>
+      <p><strong>URL:</strong> ${safeUrl}</p>
+      <p><strong>Report ID:</strong> ${safeReportId}</p>
+      <p style="margin-top:16px">${safeMessage}</p>
+    </div>
+  `;
+};
+
+const resolveScheduleEmailTarget = async (schedule, channel) => {
+  const explicitTarget = String(channel.target || '').trim().toLowerCase();
+  if (explicitTarget) {
+    return explicitTarget;
+  }
+
+  const user = await User.findById(schedule.userId).select('+email').lean();
+  return user?.email ? String(user.email).trim().toLowerCase() : '';
 };
 
 const postSlackMessage = async (webhookUrl, text) => {
@@ -189,12 +221,21 @@ export const queueDueSchedules = async () => {
         }
       });
 
-      const job = await analysisQueue.add('analyze-website', {
-        reportId: report._id.toString(),
-        url: schedule.url,
-        analysisConfig: schedule.analysisConfig || {},
-        scheduleId: schedule._id.toString()
-      });
+      let job;
+      try {
+        job = await analysisQueue.add('analyze-website', {
+          reportId: report._id.toString(),
+          url: schedule.url,
+          analysisConfig: schedule.analysisConfig || {},
+          scheduleId: schedule._id.toString()
+        });
+      } catch (queueError) {
+        await analysisService.markReportFailed(
+          report._id,
+          'Scheduled analysis could not be queued because Redis is temporarily unavailable.'
+        );
+        throw queueError;
+      }
 
       schedule.lastRunAt = now;
       schedule.lastReportId = report._id;
@@ -239,10 +280,27 @@ const deliverScheduleAlerts = async (schedule, report, title, message, type) => 
     }
 
     if (channel.type === 'email') {
-      logger.info(`Email alert prepared for schedule ${schedule._id}`, {
-        target: channel.target || 'account-email',
-        title
-      });
+      try {
+        const to = await resolveScheduleEmailTarget(schedule, channel);
+
+        if (!to) {
+          logger.warn(`Schedule email alert skipped because no target email was available for ${schedule._id}`);
+          continue;
+        }
+
+        await sendEmail({
+          to,
+          subject: title,
+          html: buildScheduleEmailHtml({ schedule, title, message, report })
+        });
+
+        logger.info(`Email alert sent for schedule ${schedule._id}`, {
+          target: to,
+          title
+        });
+      } catch (error) {
+        logger.warn(`Email alert delivery failed for schedule ${schedule._id}: ${error.message}`);
+      }
       continue;
     }
 
