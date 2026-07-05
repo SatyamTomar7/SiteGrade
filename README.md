@@ -5,7 +5,7 @@ SiteGrade is a full-stack website analysis platform that audits performance, SEO
 ## Project Structure
 
 - `client/` React + Vite frontend
-- `server/` Express + MongoDB + Redis backend
+- `server/` Express + PostgreSQL + Redis backend
 
 ## Local Development
 
@@ -35,7 +35,7 @@ Copy them to `.env` files before running locally or deploying.
 ## Deployment Notes
 
 - Frontend expects `VITE_API_URL`
-- Backend expects MongoDB, Redis, JWT secrets, and client URL configuration
+- Backend expects PostgreSQL, Redis, JWT secrets, and client URL configuration
 - Redis should use an Upstash-compatible TLS URL:
 
 ```env

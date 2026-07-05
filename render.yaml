@@ -17,7 +17,7 @@ services:
         value: https://sitegrade-frontend.onrender.com
       - key: PUBLIC_APP_URL
         value: https://sitegrade-frontend.onrender.com
-      - key: MONGODB_URI
+      - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
         sync: false
