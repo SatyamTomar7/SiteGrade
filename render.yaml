@@ -47,6 +47,8 @@ services:
         value: 1
       - key: ANALYSIS_QUEUE_ATTEMPTS
         value: 1
+      - key: ANALYSIS_JOB_LOCK_DURATION_MS
+        value: 180000
 
   - type: static
     name: sitegrade-frontend

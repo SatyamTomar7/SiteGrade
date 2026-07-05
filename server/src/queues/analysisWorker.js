@@ -17,9 +17,11 @@ import { fileURLToPath } from 'url';
 const workerConcurrency = Math.max(Number(process.env.ANALYSIS_WORKER_CONCURRENCY) || 2, 1);
 const workerRateLimitMax = Math.max(Number(process.env.ANALYSIS_WORKER_RATE_LIMIT_MAX) || 5, 1);
 const workerRateLimitDurationMs = Math.max(Number(process.env.ANALYSIS_WORKER_RATE_LIMIT_DURATION_MS) || 60000, 1000);
+const defaultParallelAuditMode = process.env.NODE_ENV !== 'production';
 const shouldRunAuditsInParallel = !['0', 'false', 'no', 'off'].includes(
-  String(process.env.ANALYSIS_RUN_AUDITS_IN_PARALLEL ?? 'true').trim().toLowerCase()
+  String(process.env.ANALYSIS_RUN_AUDITS_IN_PARALLEL ?? String(defaultParallelAuditMode)).trim().toLowerCase()
 );
+const analysisJobLockDurationMs = Math.max(Number(process.env.ANALYSIS_JOB_LOCK_DURATION_MS) || 180000, 30000);
 
 const averageScoreSet = (sets = []) => ({
   performance: Math.round(sets.reduce((sum, item) => sum + (item.performance || 0), 0) / (sets.length || 1)),
@@ -475,6 +477,7 @@ export const startAnalysisWorker = () => {
   workerInstance = new Worker('website-analysis', processAnalysis, {
     connection: redisClient,
     concurrency: workerConcurrency,
+    lockDuration: analysisJobLockDurationMs,
     limiter: {
       max: workerRateLimitMax,
       duration: workerRateLimitDurationMs
@@ -552,7 +555,9 @@ export const startAnalysisWorker = () => {
   logger.info('Analysis worker started and listening for jobs', {
     concurrency: workerConcurrency,
     rateLimitMax: workerRateLimitMax,
-    rateLimitDurationMs: workerRateLimitDurationMs
+    rateLimitDurationMs: workerRateLimitDurationMs,
+    shouldRunAuditsInParallel,
+    analysisJobLockDurationMs
   });
   return workerInstance;
 };
