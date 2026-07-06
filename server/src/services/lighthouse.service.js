@@ -278,7 +278,8 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
     logger.info(`Lighthouse ${profile} audit complete - Performance: ${scores.performance}, SEO: ${scores.seo}, A11y: ${scores.accessibility}, BP: ${scores.bestPractices}`, {
       url,
       finalUrl: lhr.finalUrl,
-      warnings: lhr.runWarnings?.length || 0
+      warnings: lhr.runWarnings?.length || 0,
+      runWarnings: lhr.runWarnings || []
     });
     logMemoryUsage('Memory after Lighthouse audit completed', {
       url,

@@ -1,6 +1,8 @@
 import { logger } from '../config/logger.js';
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
+const geminiRetryAttempts = Math.max(Number(process.env.GEMINI_RETRY_ATTEMPTS) || 3, 1);
+const geminiRetryBaseDelayMs = Math.max(Number(process.env.GEMINI_RETRY_BASE_DELAY_MS) || 1500, 250);
 
 const normalizeSeverity = (value = '') => {
   const normalized = String(value).trim().toLowerCase();
@@ -144,6 +146,28 @@ const parseGeminiJson = (rawText) => {
   throw lastError || new Error('Unable to parse Gemini JSON response');
 };
 
+const sleep = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+const isRetryableGeminiStatus = (statusCode) => [408, 429, 500, 502, 503, 504].includes(Number(statusCode));
+
+const isRetryableGeminiError = (error) => {
+  if (isRetryableGeminiStatus(error?.statusCode)) {
+    return true;
+  }
+
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('timed out') ||
+    message.includes('econnreset') ||
+    message.includes('enotfound') ||
+    message.includes('socket hang up')
+  );
+};
+
 const requestGeminiText = async (apiKey, prompt, generationConfig) => {
   const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
     method: 'POST',
@@ -160,7 +184,10 @@ const requestGeminiText = async (apiKey, prompt, generationConfig) => {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    const error = new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    error.statusCode = response.status;
+    error.responseBody = errorText;
+    throw error;
   }
 
   const result = await response.json();
@@ -171,6 +198,42 @@ const requestGeminiText = async (apiKey, prompt, generationConfig) => {
   }
 
   return text;
+};
+
+const requestGeminiTextWithRetry = async (apiKey, prompt, generationConfig) => {
+  let lastError;
+
+  for (let attempt = 1; attempt <= geminiRetryAttempts; attempt += 1) {
+    try {
+      if (attempt > 1) {
+        logger.info('Retrying Gemini request', {
+          attempt,
+          maxAttempts: geminiRetryAttempts
+        });
+      }
+
+      return await requestGeminiText(apiKey, prompt, generationConfig);
+    } catch (error) {
+      lastError = error;
+      const canRetry = attempt < geminiRetryAttempts && isRetryableGeminiError(error);
+
+      if (!canRetry) {
+        throw error;
+      }
+
+      const backoffMs = geminiRetryBaseDelayMs * (2 ** (attempt - 1));
+      logger.warn('Gemini request failed; backing off before retry', {
+        attempt,
+        maxAttempts: geminiRetryAttempts,
+        statusCode: error.statusCode || null,
+        delayMs: backoffMs,
+        message: error.message
+      });
+      await sleep(backoffMs);
+    }
+  }
+
+  throw lastError;
 };
 
 const repairGeminiJson = async (apiKey, rawText) => {
@@ -184,7 +247,7 @@ If a field is incomplete, finish it with the smallest valid value that keeps the
 Malformed JSON:
 ${rawText}`;
 
-  const repairedText = await requestGeminiText(apiKey, repairPrompt, {
+  const repairedText = await requestGeminiTextWithRetry(apiKey, repairPrompt, {
     temperature: 0,
     maxOutputTokens: 3072,
     responseMimeType: 'application/json'
@@ -360,7 +423,7 @@ export const generateAIReview = async (lighthouseData, puppeteerData) => {
   };
 
   try {
-    const text = await requestGeminiText(apiKey, prompt, {
+    const text = await requestGeminiTextWithRetry(apiKey, prompt, {
       temperature: 0.1,
       maxOutputTokens: 3072,
       responseMimeType: 'application/json',
