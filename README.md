@@ -55,6 +55,13 @@ This repo includes:
 
 This repo includes `render.yaml` with separate frontend and backend services.
 
+The recommended production setup is:
+
+- `sitegrade-backend` as the API web service with `RUN_ANALYSIS_WORKER_IN_API=false`
+- `sitegrade-analysis-worker` as a dedicated Render worker running `npm run worker`
+
+This keeps long-running Puppeteer and Lighthouse work out of the API process so Redis hiccups or heavy audits are less likely to freeze the report UI mid-run.
+
 If you deploy only the API web service and do not run a separate worker service, set `RUN_ANALYSIS_WORKER_IN_API=true` so queued analysis jobs actually get processed. Otherwise reports can remain stuck at `0%` in production.
 
 For Render-sized instances, Lighthouse can push memory usage sharply higher because Puppeteer and Lighthouse both rely on Chrome. This repo now supports `ANALYSIS_CLOSE_PUPPETEER_BEFORE_LIGHTHOUSE=true` to free the shared Puppeteer browser before Lighthouse starts, plus `ANALYSIS_MEMORY_LOGGING=true` to emit memory snapshots around each analysis phase.
