@@ -55,6 +55,10 @@ services:
         value: 2
       - key: ANALYSIS_LINK_CHECK_CONCURRENCY
         value: 4
+      - key: ANALYSIS_CLOSE_PUPPETEER_BEFORE_LIGHTHOUSE
+        value: true
+      - key: ANALYSIS_MEMORY_LOGGING
+        value: true
       - key: LIGHTHOUSE_TIMEOUT_MS
         value: 120000
       - key: REDIS_CONNECT_TIMEOUT_MS

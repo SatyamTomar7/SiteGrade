@@ -2,6 +2,7 @@ import lighthouse from 'lighthouse';
 import * as chromeLauncher from 'chrome-launcher';
 import { logger } from '../config/logger.js';
 import { getBrowserLaunchArgs, getChromeExecutablePath } from '../utils/browser.js';
+import { logMemoryUsage } from '../utils/runtimeDiagnostics.js';
 
 const lighthouseTimeoutMs = Math.max(Number(process.env.LIGHTHOUSE_TIMEOUT_MS) || 120000, 30000);
 
@@ -155,6 +156,10 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
     const chromePath = await getChromeExecutablePath();
     const chromeFlags = ['--headless', ...getBrowserLaunchArgs()];
 
+    logMemoryUsage('Memory before Lighthouse Chrome launch', {
+      url,
+      profile
+    });
     logger.info('Launching Chrome for Lighthouse audit', {
       url,
       profile,
@@ -166,6 +171,11 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
       chromePath,
       chromeFlags,
       logLevel: 'error'
+    });
+    logMemoryUsage('Memory after Lighthouse Chrome launch', {
+      url,
+      profile,
+      chromePort: chrome.port
     });
 
     const profileConfig = getProfileConfig(profile);
@@ -270,6 +280,10 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
       finalUrl: lhr.finalUrl,
       warnings: lhr.runWarnings?.length || 0
     });
+    logMemoryUsage('Memory after Lighthouse audit completed', {
+      url,
+      profile
+    });
 
     return {
       profile,
@@ -290,6 +304,11 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
       }
     };
   } catch (error) {
+    logMemoryUsage('Memory snapshot during Lighthouse audit failure', {
+      url,
+      profile,
+      code: error.code
+    });
     logger.error(`Lighthouse ${profile} audit error`, {
       url,
       profile,
@@ -302,6 +321,10 @@ export const analyzeWithLighthouse = async (url, options = {}) => {
     if (chrome) {
       try {
         await chrome.kill();
+        logMemoryUsage('Memory after Lighthouse Chrome termination', {
+          url,
+          profile
+        });
       } catch (error) {
         logger.warn('Failed to terminate Lighthouse Chrome process cleanly', {
           url,

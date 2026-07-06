@@ -12,6 +12,7 @@ import { getCruxFieldData } from '../services/crux.service.js';
 import { generateAIReview } from '../services/aiReview.service.js';
 import { handleScheduledReportCompleted, handleScheduledReportFailed } from '../modules/schedules/schedules.service.js';
 import { closeSharedPuppeteerBrowser } from '../utils/browser.js';
+import { logMemoryUsage } from '../utils/runtimeDiagnostics.js';
 import { fileURLToPath } from 'url';
 
 const workerConcurrency = Math.max(Number(process.env.ANALYSIS_WORKER_CONCURRENCY) || 1, 1);
@@ -24,6 +25,9 @@ const shouldRunAuditsInParallel = !['0', 'false', 'no', 'off'].includes(
 const analysisJobLockDurationMs = Math.max(Number(process.env.ANALYSIS_JOB_LOCK_DURATION_MS) || 600000, 30000);
 const analysisJobStalledIntervalMs = Math.max(Number(process.env.ANALYSIS_JOB_STALLED_INTERVAL_MS) || 30000, 5000);
 const analysisJobMaxStalledCount = Math.max(Number(process.env.ANALYSIS_JOB_MAX_STALLED_COUNT) || 2, 1);
+const shouldClosePuppeteerBeforeLighthouse = !['0', 'false', 'no', 'off'].includes(
+  String(process.env.ANALYSIS_CLOSE_PUPPETEER_BEFORE_LIGHTHOUSE ?? 'true').trim().toLowerCase()
+);
 
 const averageScoreSet = (sets = []) => ({
   performance: Math.round(sets.reduce((sum, item) => sum + (item.performance || 0), 0) / (sets.length || 1)),
@@ -83,9 +87,31 @@ const processAnalysis = async (job) => {
 
     const runPuppeteerAudit = async () => {
       logger.info(`[Job ${job.id}] Starting Puppeteer audit`);
+      logMemoryUsage(`[Job ${job.id}] Memory before Puppeteer audit`, {
+        reportId,
+        url
+      });
       const result = await analyzeWithPuppeteer(url, reportId, analysisConfig);
       await job.updateProgress(30);
       logger.info(`[Job ${job.id}] Puppeteer complete - detected ${result.techStack.length} technologies`);
+      logMemoryUsage(`[Job ${job.id}] Memory after Puppeteer audit`, {
+        reportId,
+        url
+      });
+
+      if (shouldClosePuppeteerBeforeLighthouse) {
+        logger.info(`[Job ${job.id}] Closing shared Puppeteer browser before Lighthouse to reduce memory pressure`);
+        await closeSharedPuppeteerBrowser().catch((error) => {
+          logger.warn(`[Job ${job.id}] Failed to close shared Puppeteer browser before Lighthouse`, {
+            message: error.message
+          });
+        });
+        logMemoryUsage(`[Job ${job.id}] Memory after Puppeteer browser cleanup`, {
+          reportId,
+          url
+        });
+      }
+
       return result;
     };
 
@@ -123,6 +149,7 @@ const processAnalysis = async (job) => {
         ];
 
     await job.updateProgress(60);
+    await job.updateProgress(65);
     const lighthouseByProfile = Object.fromEntries(lighthouseProfiles.map((item) => [item.profile, item]));
     const primaryLighthouseData = lighthouseByProfile.mobile || lighthouseProfiles[0];
     const lighthouseData = {
@@ -143,8 +170,12 @@ const processAnalysis = async (job) => {
       )
     };
     logger.info(`[Job ${job.id}] Lighthouse complete - Performance: ${lighthouseData.scores.performance}`);
+    logMemoryUsage(`[Job ${job.id}] Memory after Lighthouse audits`, {
+      reportId,
+      url,
+      profiles: auditProfiles
+    });
 
-    await job.updateProgress(72);
     let benchmarkData = {
       compared: 0,
       targetRank: 1,
@@ -206,9 +237,9 @@ const processAnalysis = async (job) => {
       }, competitorResults);
       benchmarkData.results = competitorResults;
     }
+    await job.updateProgress(72);
 
     // Phase 2: AI Review Generation (60-85%)
-    await job.updateProgress(65);
     logger.info(`[Job ${job.id}] Phase 2: AI review generation`);
     
     const aiReviewData = await generateAIReview(lighthouseData, {
@@ -387,6 +418,11 @@ const processAnalysis = async (job) => {
 
     return report;
   } catch (error) {
+    logMemoryUsage(`[Job ${job.id}] Memory snapshot after analysis failure`, {
+      reportId,
+      url,
+      auditProfiles
+    });
     logger.error(`[Job ${job.id}] Analysis failed`, {
       reportId,
       url,
@@ -523,6 +559,10 @@ export const startAnalysisWorker = () => {
 
   workerInstance.on('active', (job) => {
     logger.info(`[Job ${job.id}] Started processing`);
+    logMemoryUsage(`[Job ${job.id}] Memory at job start`, {
+      reportId: job?.data?.reportId,
+      url: job?.data?.url
+    });
   });
 
   workerInstance.on('stalled', (jobId) => {
