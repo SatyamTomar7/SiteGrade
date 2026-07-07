@@ -5,7 +5,7 @@ export const Footer = () => {
   return (
     <footer className="border-t border-slate-200/80 bg-white/80 backdrop-blur-sm dark:border-dark-border dark:bg-dark-surface/70">
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.5fr_1fr_1fr]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.25fr_0.85fr_0.9fr]">
           <div className="card border-slate-200/70 bg-gradient-to-br from-white to-slate-50 dark:from-dark-surface dark:to-slate-900">
             <Link to="/" className="mb-4 flex items-center gap-3">
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-primary-600">
@@ -19,18 +19,6 @@ export const Footer = () => {
             <p className="max-w-xl text-sm leading-7 text-slate-600 dark:text-slate-300">
               Review performance, SEO, accessibility, and implementation quality in one place, then turn findings into fixes your team can actually ship.
             </p>
-            <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                ['Clear reports', 'Readable summaries and quick priorities.'],
-                ['Built for teams', 'Compare runs, share results, and plan follow-up.'],
-                ['Responsive UI', 'Comfortable to review on phones and laptops.']
-              ].map(([title, copy]) => (
-                <div key={title} className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-4 text-sm dark:border-dark-border dark:bg-dark-bg/60">
-                  <p className="font-semibold text-slate-900 dark:text-white">{title}</p>
-                  <p className="mt-1 text-slate-600 dark:text-slate-300">{copy}</p>
-                </div>
-              ))}
-            </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link to="/analysis" className="btn-primary">
                 Start an audit
@@ -62,12 +50,12 @@ export const Footer = () => {
           </div>
 
           <div className="card">
-            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">What You Get</h3>
-            <div className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
-              <p>Clear scoring across performance, SEO, accessibility, security, and best practices.</p>
-              <p>Shareable reports, comparisons, recurring scans, and implementation follow-up tools.</p>
-              <p>Responsive layouts that stay readable from phones to large desktops.</p>
-            </div>
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Why It Stays Simple</h3>
+            <ul className="space-y-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+              <li>Start with one URL and one clear report.</li>
+              <li>Open automation only when you need it.</li>
+              <li>Keep technical depth available without putting it in the way.</li>
+            </ul>
           </div>
         </div>
 

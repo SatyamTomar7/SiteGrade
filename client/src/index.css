@@ -19,17 +19,17 @@
   body {
     @apply bg-slate-950 text-slate-900;
     background-image:
-      radial-gradient(circle at top, rgba(59, 130, 246, 0.14), transparent 30%),
-      linear-gradient(180deg, #f8fbff 0%, #eef4ff 28%, #f8fafc 55%, #ffffff 100%);
+      radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 26%),
+      linear-gradient(180deg, #f8fbff 0%, #f3f7ff 24%, #f8fafc 58%, #ffffff 100%);
     background-attachment: fixed;
-    line-height: 1.5;
+    line-height: 1.6;
     overflow-x: hidden;
   }
 
   .dark body {
     @apply text-slate-100;
     background-image:
-      radial-gradient(circle at top, rgba(37, 99, 235, 0.18), transparent 26%),
+      radial-gradient(circle at top, rgba(37, 99, 235, 0.14), transparent 24%),
       linear-gradient(180deg, #020617 0%, #0f172a 32%, #111827 100%);
   }
 
@@ -90,11 +90,11 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-primary-600 dark:hover:bg-primary-500 sm:px-6 sm:text-base;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-primary-600 dark:hover:bg-primary-500 sm:px-6 sm:text-base;
   }
   
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:border-dark-border dark:bg-dark-surface dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-800 sm:px-6 sm:text-base;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:border-dark-border dark:bg-dark-surface dark:text-slate-200 dark:hover:border-slate-500 dark:hover:bg-slate-800 sm:px-6 sm:text-base;
   }
   
   .input-field {
@@ -102,7 +102,7 @@
   }
   
   .card {
-    @apply rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm dark:border-dark-border dark:bg-dark-surface/95 sm:p-6;
+    @apply rounded-2xl border border-slate-200/80 bg-white/95 p-4 shadow-sm backdrop-blur-sm transition-shadow duration-200 dark:border-dark-border dark:bg-dark-surface/95 sm:p-6;
   }
 
   .page-shell {
@@ -114,7 +114,7 @@
   }
 
   .section-kicker {
-    @apply inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/80 px-4 py-2 text-sm font-medium text-primary-700 shadow-sm dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-300;
+    @apply inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/80 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary-700 shadow-sm dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-300 sm:text-sm;
   }
 
   .section-title {
@@ -122,7 +122,19 @@
   }
 
   .section-copy {
-    @apply text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-base;
+    @apply max-w-3xl text-sm leading-7 text-slate-600 dark:text-slate-300 sm:text-base;
+  }
+
+  .surface-subtle {
+    @apply rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-dark-border dark:bg-dark-surface/80;
+  }
+
+  .section-stack {
+    @apply space-y-6 sm:space-y-8;
+  }
+
+  .eyebrow-label {
+    @apply text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400;
   }
 
   .skip-link {

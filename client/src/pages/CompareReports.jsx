@@ -183,6 +183,23 @@ export const CompareReports = () => {
           <p className="section-copy mt-2">
             Compare score deltas, grade movement, tech stack changes, and console quality between two analyses.
           </p>
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="surface-subtle">
+              <p className="eyebrow-label">Step 1</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">Start with the summary</p>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">Check whether the latest run improved, regressed, or stayed stable.</p>
+            </div>
+            <div className="surface-subtle">
+              <p className="eyebrow-label">Step 2</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">Scan changed metrics</p>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">Focus on the biggest score shifts before reading every detail.</p>
+            </div>
+            <div className="surface-subtle">
+              <p className="eyebrow-label">Step 3</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">Open visual diff if needed</p>
+              <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">Use screenshots only when you need visual confirmation of what changed.</p>
+            </div>
+          </div>
           {comparison.summary && (
             <div className="mt-4 rounded-xl border border-slate-200 dark:border-dark-border bg-slate-50 dark:bg-dark-surface p-4">
               <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -195,7 +212,7 @@ export const CompareReports = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {[comparison.leftReport, comparison.rightReport].map((report, index) => (
             <div key={report.id} className="card">
-              <p className="text-sm text-slate-500 dark:text-slate-400">{index === 0 ? 'Baseline' : 'Latest'}</p>
+              <p className="eyebrow-label">{index === 0 ? 'Baseline' : 'Latest'}</p>
               <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-white break-all">{report.url}</h2>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                 <div>
@@ -276,7 +293,7 @@ export const CompareReports = () => {
           {highlights.map((item) => (
             <div key={item.metric} className="card">
               <div className="flex items-center justify-between">
-                <p className="text-sm uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <p className="eyebrow-label">
                   {item.metric.replace(/([A-Z])/g, ' $1').trim()}
                 </p>
                 {deltaIcon(item.delta)}

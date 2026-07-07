@@ -19,15 +19,18 @@ import {
   BarChart3,
   Bell,
   CalendarClock,
+  ChevronDown,
   Copy,
   Download,
   ExternalLink,
   Filter,
+  Layers3,
   Link2,
   RefreshCcw,
   ScanLine,
   Search,
   Share2,
+  SlidersHorizontal,
   Trash2,
   TrendingDown
 } from 'lucide-react';
@@ -91,7 +94,9 @@ const EmptyMessage = ({ children }) => (
 export const Dashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState('reports');
   const [filters, setFilters] = useState(defaultFilters);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [shareMessage, setShareMessage] = useState('');
   const [scheduleForm, setScheduleForm] = useState({
@@ -290,6 +295,12 @@ export const Dashboard = () => {
     await deleteMutation.mutateAsync(reportId);
   };
 
+  const tabs = [
+    { id: 'reports', label: 'Reports', icon: <ScanLine className="h-4 w-4" /> },
+    { id: 'insights', label: 'Insights', icon: <BarChart3 className="h-4 w-4" /> },
+    { id: 'automation', label: 'Automation', icon: <Layers3 className="h-4 w-4" /> }
+  ];
+
   return (
     <div className="page-shell">
       <div className="page-container space-y-10">
@@ -338,7 +349,34 @@ export const Dashboard = () => {
           />
         </section>
 
-        {insights && (
+        <section className="card">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Choose a workspace view</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Keep reports front and center, then open insights or automation only when you need them.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={
+                    activeTab === tab.id
+                      ? 'btn-primary w-full px-4 py-2 text-sm'
+                      : 'btn-secondary w-full px-4 py-2 text-sm'
+                  }
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {activeTab === 'insights' && insights && (
           <section className="content-auto space-y-6">
             <DashboardSectionHeading
               icon={<BarChart3 className="h-5 w-5 text-primary-600" />}
@@ -455,6 +493,22 @@ export const Dashboard = () => {
           </section>
         )}
 
+        {activeTab === 'insights' && !insights && (
+          <section className="content-auto">
+            <div className="card">
+              <DashboardSectionHeading
+                icon={<BarChart3 className="h-5 w-5 text-primary-600" />}
+                title="Insights"
+                description="Charts and trend summaries will appear here after a few completed reports."
+              />
+              <EmptyMessage>
+                Run a few completed analyses to unlock score trends, repeated issues, and regression summaries.
+              </EmptyMessage>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'reports' && (
         <section className="content-auto space-y-6">
           <DashboardSectionHeading
             icon={<ScanLine className="h-5 w-5 text-primary-600" />}
@@ -462,13 +516,34 @@ export const Dashboard = () => {
             description="Filter the audits you care about, select two to compare, and open each report with less visual noise."
           />
 
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-dark-border dark:bg-dark-surface/80">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Start with one report</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                Open a recent report first, then compare only when you need to understand change over time.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-dark-border dark:bg-dark-surface/80">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Use filters lightly</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                Search and status are usually enough. Keep the rest for focused triage sessions.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-dark-border dark:bg-dark-surface/80">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Compare with intent</p>
+              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                Select exactly two completed reports when you need a before-and-after view.
+              </p>
+            </div>
+          </div>
+
           <div className="card">
             <DashboardSectionHeading
               icon={<Filter className="h-5 w-5 text-primary-600" />}
               title="Filter reports"
-              description="Narrow the list by URL, status, minimum score, date range, or sort order."
+              description="Start with URL and status, then open more filters only when you need focused triage."
             />
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div className="xl:col-span-2">
                 <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">Search URL</label>
                 <div className="relative">
@@ -481,7 +556,7 @@ export const Dashboard = () => {
                   />
                 </div>
               </div>
-              <div>
+              <div className="xl:col-span-1">
                 <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">Status</label>
                 <select value={filters.status} onChange={(event) => handleFilterChange('status', event.target.value)} className="input-field">
                   <option value="all">All</option>
@@ -491,38 +566,52 @@ export const Dashboard = () => {
                   <option value="processing">Processing</option>
                 </select>
               </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">Min score</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={filters.minScore}
-                  onChange={(event) => handleFilterChange('minScore', event.target.value)}
-                  className="input-field"
-                  placeholder="70"
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">From</label>
-                <input type="date" value={filters.dateFrom} onChange={(event) => handleFilterChange('dateFrom', event.target.value)} className="input-field" />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">To</label>
-                <input type="date" value={filters.dateTo} onChange={(event) => handleFilterChange('dateTo', event.target.value)} className="input-field" />
-              </div>
             </div>
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              <select value={filters.sortBy} onChange={(event) => handleFilterChange('sortBy', event.target.value)} className="input-field w-full sm:max-w-xs">
-                <option value="newest">Newest first</option>
-                <option value="oldest">Oldest first</option>
-                <option value="highest-score">Highest score</option>
-                <option value="lowest-score">Lowest score</option>
-              </select>
+              <button
+                onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                className="btn-secondary w-full sm:w-auto"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+                {showAdvancedFilters ? 'Hide More Filters' : 'More Filters'}
+              </button>
               <button onClick={() => setFilters(defaultFilters)} className="btn-secondary w-full sm:w-auto">
                 Reset Filters
               </button>
             </div>
+            {showAdvancedFilters && (
+              <div className="mt-4 grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 md:grid-cols-2 xl:grid-cols-4 dark:border-dark-border dark:bg-dark-surface/70">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">Min score</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={filters.minScore}
+                    onChange={(event) => handleFilterChange('minScore', event.target.value)}
+                    className="input-field"
+                    placeholder="70"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">From</label>
+                  <input type="date" value={filters.dateFrom} onChange={(event) => handleFilterChange('dateFrom', event.target.value)} className="input-field" />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">To</label>
+                  <input type="date" value={filters.dateTo} onChange={(event) => handleFilterChange('dateTo', event.target.value)} className="input-field" />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">Sort</label>
+                  <select value={filters.sortBy} onChange={(event) => handleFilterChange('sortBy', event.target.value)} className="input-field">
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="highest-score">Highest score</option>
+                    <option value="lowest-score">Lowest score</option>
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           {shareMessage && (
@@ -582,73 +671,94 @@ export const Dashboard = () => {
 
                         <h3 className="text-lg font-semibold text-slate-900 dark:text-white break-all">{report.url}</h3>
 
-                        <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+                        <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-3">
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Overall score</p>
                             <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{report.overallScore ?? 'N/A'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Portfolio readiness</p>
-                            <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{report.portfolioReadinessScore ?? 0}</p>
                           </div>
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Created</p>
                             <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">{formatDate(report.createdAt)}</p>
                           </div>
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Tech stack</p>
-                            <p className="mt-2 text-sm text-slate-700 dark:text-slate-300 break-words">{report.techStack?.slice(0, 3).join(', ') || 'N/A'}</p>
+                            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Last summary</p>
+                            <p className="mt-2 text-sm text-slate-700 dark:text-slate-300 break-words">
+                              {report.topIssue || report.grade ? `Grade ${report.grade || 'N/A'}` : 'Open report for details'}
+                            </p>
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 xl:w-[18rem]">
+                    <div className="flex flex-col gap-2 xl:w-[18rem]">
                       <button onClick={() => navigate(`/reports/${report.id}`)} className="btn-secondary w-full px-4 py-2 text-sm">
                         <ExternalLink className="h-4 w-4" />
                         Open
                       </button>
-                      <button onClick={() => rerunMutation.mutate(report.id)} className="btn-secondary w-full px-4 py-2 text-sm">
-                        <RefreshCcw className="h-4 w-4" />
-                        Re-run
-                      </button>
-                      <button
-                        onClick={async () => {
-                          const response = await analysisApi.getReport(report.id);
-                          downloadReportHtml(response.data);
-                        }}
-                        className="btn-secondary w-full px-4 py-2 text-sm"
-                      >
-                        <Download className="h-4 w-4" />
-                        Export
-                      </button>
-                      <button
-                        onClick={async () => {
-                          if (report.isPublic) {
-                            await navigator.clipboard.writeText(`${window.location.origin}/shared/${report.publicShareToken}`);
-                            setShareMessage(`Copied public share link for ${report.url}`);
-                          } else {
-                            await shareMutation.mutateAsync(report.id);
-                          }
-                        }}
-                        className="btn-secondary w-full px-4 py-2 text-sm"
-                      >
-                        <Share2 className="h-4 w-4" />
-                        {report.isPublic ? 'Copy Share Link' : 'Create Share Link'}
-                      </button>
-                      {report.isPublic && (
-                        <button onClick={() => unshareMutation.mutate(report.id)} className="btn-secondary w-full px-4 py-2 text-sm">
-                          <Copy className="h-4 w-4" />
-                          Disable Share
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(report.id)}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </button>
+                      <details className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-dark-border dark:bg-dark-surface">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                          <span className="inline-flex items-center gap-2">
+                            <SlidersHorizontal className="h-4 w-4" />
+                            More actions
+                          </span>
+                          <ChevronDown className="h-4 w-4" />
+                        </summary>
+                        <div className="mt-3 grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-dark-border dark:bg-slate-950/20">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Portfolio readiness</p>
+                              <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">{report.portfolioReadinessScore ?? 0}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Tech stack</p>
+                              <p className="mt-1 text-sm text-slate-700 dark:text-slate-300 break-words">{report.techStack?.slice(0, 3).join(', ') || 'N/A'}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
+                          <button onClick={() => rerunMutation.mutate(report.id)} className="btn-secondary w-full px-4 py-2 text-sm">
+                            <RefreshCcw className="h-4 w-4" />
+                            Re-run
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const response = await analysisApi.getReport(report.id);
+                              downloadReportHtml(response.data);
+                            }}
+                            className="btn-secondary w-full px-4 py-2 text-sm"
+                          >
+                            <Download className="h-4 w-4" />
+                            Export
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (report.isPublic) {
+                                await navigator.clipboard.writeText(`${window.location.origin}/shared/${report.publicShareToken}`);
+                                setShareMessage(`Copied public share link for ${report.url}`);
+                              } else {
+                                await shareMutation.mutateAsync(report.id);
+                              }
+                            }}
+                            className="btn-secondary w-full px-4 py-2 text-sm"
+                          >
+                            <Share2 className="h-4 w-4" />
+                            {report.isPublic ? 'Copy Link' : 'Share'}
+                          </button>
+                          {report.isPublic && (
+                            <button onClick={() => unshareMutation.mutate(report.id)} className="btn-secondary w-full px-4 py-2 text-sm">
+                              <Copy className="h-4 w-4" />
+                              Disable Share
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(report.id)}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-300"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </button>
+                        </div>
+                      </details>
                     </div>
                   </div>
                 </div>
@@ -681,13 +791,22 @@ export const Dashboard = () => {
             </div>
           )}
         </section>
+        )}
 
+        {activeTab === 'automation' && (
         <section className="content-auto space-y-6">
           <DashboardSectionHeading
             icon={<CalendarClock className="h-5 w-5 text-primary-600" />}
             title="Automation and collaboration"
             description="Recurring scans, notifications, deploy-triggered checks, and shared workspaces live here."
           />
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-dark-border dark:bg-dark-surface/80">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">Use this area only when you need ongoing workflows</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Most users can ignore this tab until they want recurring checks, deploy-triggered scans, or team sharing.
+            </p>
+          </div>
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <div className="card">
@@ -925,7 +1044,7 @@ fetch("${hook.webhookUrl}", { method: "POST", headers: { "Content-Type": "applic
                 onClick={() => createWorkspaceMutation.mutate({
                   name: workspaceForm.name,
                   description: workspaceForm.description,
-                  memberEmails: workspaceForm.memberEmails.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean)
+                  members: workspaceForm.memberEmails.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean)
                 })}
                 disabled={!workspaceForm.name.trim() || createWorkspaceMutation.isPending}
                 className="btn-primary mt-3"
@@ -943,7 +1062,7 @@ fetch("${hook.webhookUrl}", { method: "POST", headers: { "Content-Type": "applic
                           <p className="font-semibold text-slate-900 dark:text-white">{workspace.name}</p>
                           <p className="text-sm text-slate-500 dark:text-slate-400">{workspace.description || 'No description'}</p>
                           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                            Members: {workspace.memberEmails?.length ? workspace.memberEmails.join(', ') : 'None added'}
+                            Members: {workspace.members?.length ? workspace.members.map((member) => member.email).join(', ') : 'None added'}
                           </p>
                         </div>
                         <button
@@ -960,6 +1079,7 @@ fetch("${hook.webhookUrl}", { method: "POST", headers: { "Content-Type": "applic
             </div>
           </div>
         </section>
+        )}
       </div>
     </div>
   );

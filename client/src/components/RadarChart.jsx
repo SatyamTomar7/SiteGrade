@@ -26,7 +26,7 @@ export const RadarChartComponent = ({ scores }) => {
             A quick visual view of how balanced the audit is across the five main scoring areas.
           </p>
         </div>
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:border-dark-border dark:bg-dark-surface dark:text-slate-400">
+        <div className="surface-subtle px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
           Higher and more even coverage usually means a healthier report.
         </div>
       </div>
@@ -69,8 +69,8 @@ export const RadarChartComponent = ({ scores }) => {
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-1">
           {data.map((item) => (
-            <div key={item.subject} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-dark-border dark:bg-dark-surface">
-              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            <div key={item.subject} className="surface-subtle">
+              <p className="eyebrow-label">
                 {item.subject}
               </p>
               <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">{item.A ?? 0}</p>

@@ -34,17 +34,17 @@ export const ScoreCard = ({ title, score, icon, description }) => {
   return (
     <div
       className={cn(
-        "card border-2 transition-all duration-300 hover:shadow-md",
+        "card border transition-all duration-300 hover:shadow-md",
         getScoreBg(score)
       )}
     >
-      <div className="flex items-start justify-between mb-4">
-        <div className="p-2 rounded-lg bg-white/50 dark:bg-dark-bg/50">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="rounded-xl bg-white/70 p-2.5 dark:bg-dark-bg/50">
           {icon}
         </div>
 
-        <div className="relative w-20 h-20">
-          <svg className="w-full h-full transform -rotate-90" viewBox="0 0 80 80">
+        <div className="relative h-20 w-20">
+          <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 80 80">
             <circle
               cx="40"
               cy="40"
@@ -85,7 +85,7 @@ export const ScoreCard = ({ title, score, icon, description }) => {
       </h3>
 
       {description && (
-        <p className="text-sm text-slate-600 dark:text-slate-400">
+        <p className="text-sm leading-6 text-slate-600 dark:text-slate-400">
           {description}
         </p>
       )}
